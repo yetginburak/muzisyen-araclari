@@ -26,7 +26,8 @@ self.addEventListener("fetch", function(e){
   if (req.method !== "GET") return;
   var url = new URL(req.url);
   if (url.origin === self.location.origin){
-    e.respondWith(fetch(req).then(function(res){ return keep(req, res); }).catch(function(){
+    // The browser's own cache is skipped, so a newly published version shows on the next open.
+    e.respondWith(fetch(req.url, {cache: "no-store", credentials: "same-origin"}).then(function(res){ return keep(req, res); }).catch(function(){
       return caches.match(req, {ignoreSearch: true}).then(function(hit){ return hit || caches.match("index.html"); });
     }));
     return;
