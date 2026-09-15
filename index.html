@@ -714,7 +714,7 @@
 <div class="app">
   <aside class="sidebar">
     <div class="brand">
-      <div class="brand-eyebrow">Setlist Defteri</div>
+      <div class="brand-eyebrow">Repertuar Defteri</div>
       <label class="artist-label" for="artistSelect">Sanatçı / proje</label>
       <div class="artist-row" id="artistRow">
         <select class="artist-select" id="artistSelect"></select>
@@ -2928,7 +2928,7 @@
     var data;
     try { data = JSON.parse(text); } catch(err){ data = null; }
     if (!data || data.format !== FILE_FORMAT){
-      alertStatus("Bu dosya bir Setlist Defteri dosyası değil.");
+      alertStatus("Bu dosya bir Repertuar Defteri dosyası değil.");
       return;
     }
     if (data.kind === "backup") return importBackup(data);
