@@ -534,12 +534,16 @@
   @media (max-width: 900px){
     .app{ grid-template-columns:1fr; }
     .sidebar{ min-height:100vh; min-height:100dvh; border-right:0; padding:14px 0 calc(14px + env(safe-area-inset-bottom)); }
-    .song-item{ padding:13px 12px; }
-    .song-title{ font-size:16px; }
-    .song-artist{ font-size:12.5px; }
-    .song-num, .song-key{ font-size:13px; }
-    .tab{ font-size:14px; padding:12px 4px; }
-    .btn-ghost{ font-size:14px; padding:12px 10px; }
+    .brand{ padding:0 14px 12px; }
+    .artist-label{ margin-top:8px; }
+    .song-list{ padding:4px 8px; }
+    .song-item{ padding:8px 10px; }
+    .song-title{ font-size:15px; }
+    .song-artist{ font-size:12px; }
+    .song-num, .song-key{ font-size:12px; }
+    .tab{ font-size:13.5px; padding:10px 4px; }
+    .sidebar-foot{ padding:10px 14px 0; }
+    .btn-ghost{ font-size:13px; padding:10px; }
     .stage{ display:none; padding:0 12px 40px; }
     body.m-edit .sidebar{ display:none; }
     body.m-edit .stage{ display:flex; }
@@ -574,7 +578,7 @@
   .reader-bar{
     flex:none;
     display:flex; align-items:center; gap:8px;
-    padding:8px 10px; padding-top:max(8px, env(safe-area-inset-top));
+    padding:6px 8px; padding-top:max(6px, env(safe-area-inset-top));
     background:var(--shell); border-bottom:1px solid var(--line);
   }
   .reader-btn{
@@ -591,18 +595,18 @@
   .reader-btn:disabled{ opacity:.35; cursor:default; }
   .reader-btn:focus-visible{ outline:2px solid var(--brass); outline-offset:2px; }
   .reader-pos{ flex:1; text-align:center; font:600 13px "IBM Plex Mono",monospace; color:var(--text-lo); font-variant-numeric:tabular-nums; }
-  .reader-scroll{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; padding:14px 12px calc(40px + env(safe-area-inset-bottom)); }
-  .reader-head{ display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:4px 16px; border-bottom:2px solid var(--ink); padding-bottom:8px; margin-bottom:6px; }
-  .reader-title{ font:700 24px/1.15 "Fraunces",serif; }
-  .reader-artist{ font:italic 400 14px "Fraunces",serif; color:#4b4a42; margin-top:2px; }
+  .reader-scroll{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; padding:8px 8px calc(6px + env(safe-area-inset-bottom)); }
+  .reader-head{ display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:0 12px; border-bottom:1.5px solid var(--ink); padding-bottom:4px; margin-bottom:2px; }
+  .reader-name{ min-width:0; }
+  .reader-title{ font:700 19px/1.2 "Fraunces",serif; }
+  .reader-artist{ font:italic 400 13px "Fraunces",serif; color:#4b4a42; }
   .reader-facts{ font:500 12px "IBM Plex Mono",monospace; color:#4b4a42; white-space:nowrap; }
   .reader-facts b{ color:var(--ink); font-weight:700; margin-right:10px; }
-  .reader-fit{ position:relative; }
+  .reader-fit{ position:relative; overflow:hidden; }
   .reader-page{ position:absolute; left:0; top:0; transform-origin:top left; }
   .reader-page .chord-slot, .reader-page .bar-cell{ pointer-events:none; cursor:default; }
   .reader-page .bar-cell:hover{ background:none; }
   .reader-empty{ padding:40px 4px; color:#6b6a5f; font-style:italic; }
-  .reader-hint{ margin:18px 0 0; font-size:12px; color:#8a8873; text-align:center; }
   .page{
     position:relative;
     flex:none;
@@ -1865,9 +1869,9 @@
   // ---- geometry ----
   // Labels and notes stay readable when the grid is dense; only a very crowded page
   // lets them shrink further, so they keep to their band above the staff.
-  function annFontFor(s){ return Math.min(Math.max(12, 15 * s), BAND * s * 0.42 + 2); }
-  function annRowFor(s){ return annFontFor(s) * 1.32; }
-  function voltaFontFor(s){ return Math.min(Math.max(10, 12 * s), BAND * s * 0.3 + 1); }
+  function annFontFor(s, band, k){ return Math.min(Math.max(12, 15 * s) * (k || 1), (band || BAND) * s * 0.42 + 2); }
+  function annRowFor(s, band, k){ return annFontFor(s, band, k) * 1.32; }
+  function voltaFontFor(s, band){ return Math.min(Math.max(10, 12 * s), (band || BAND) * s * 0.3 + 1); }
 
   function rowBarCount(layout, row){ return layout.rowCounts[row] || layout.perLine; }
 
@@ -1876,6 +1880,8 @@
   // keeps every line at full size and lets the page grow to the lines that hold bars.
   function computeGeom(d, gridTop, page){
     page = page || {w:PAGE_W, h:PAGE_H, padX:PAD_X, fit:false};
+    // The reader packs its lines tighter: a smaller clef, a lower band, bigger chords.
+    var rowBase = page.rowBase || ROW_BASE, band = page.band || BAND, metaBase = page.metaBase || META_BASE;
     var n = d.bars.length, layout = d.layout;
     var rows = [], barRow = [];
     for (var start = 0, r = 0; start < n; r++){
@@ -1890,22 +1896,23 @@
     var needed = Math.max(1, rows.length);
     var lines = page.fit ? needed : Math.max(layout.lines, needed);
     for (var e = rows.length; e < lines; e++) rows.push({start:n, count:0, cfg:rowBarCount(layout, e)});
-    var pageH = page.fit ? gridTop + lines * ROW_BASE + PAD_BOTTOM : page.h;
+    var pageH = page.fit ? gridTop + lines * rowBase + (page.padBottom || PAD_BOTTOM) : page.h;
     var rowH = (pageH - PAD_BOTTOM - gridTop) / lines;
-    var s = Math.min(1, rowH / ROW_BASE);
+    var s = Math.min(1, rowH / rowBase);
     var gridW = page.w - 2 * page.padX;
-    var meta = META_BASE * s;
+    var meta = metaBase * s;
     rows.forEach(function(row){ row.mW = (gridW - meta) / row.cfg; });
-    return {n:n, lines:lines, needed:needed, gridTop:gridTop, rowH:rowH, s:s, gridW:gridW, meta:meta, rows:rows, barRow:barRow, pageW:page.w, pageH:pageH, padX:page.padX};
+    return {n:n, lines:lines, needed:needed, gridTop:gridTop, rowH:rowH, s:s, gridW:gridW, meta:meta, rows:rows, barRow:barRow, pageW:page.w, pageH:pageH, padX:page.padX,
+      rowBase:rowBase, band:band, metaBase:metaBase, clefK:page.clefK || 1, chordK:page.chordK || 1, annK:page.annK || 1};
   }
 
-  function rowStaffTop(G, row){ return G.gridTop + row * G.rowH + (G.rowH - ROW_BASE * G.s) / 2 + BAND * G.s; }
+  function rowStaffTop(G, row){ return G.gridTop + row * G.rowH + (G.rowH - G.rowBase * G.s) / 2 + G.band * G.s; }
 
   function barBox(G, i){
     var r = G.barRow[i], row = G.rows[r];
     var staffTop = rowStaffTop(G, r);
     var x = G.padX + G.meta + (i - row.start) * row.mW;
-    return {row:r, x:x, right:x + row.mW, mW:row.mW, staffTop:staffTop, top:staffTop - BAND * G.s};
+    return {row:r, x:x, right:x + row.mW, mW:row.mW, staffTop:staffTop, top:staffTop - G.band * G.s};
   }
 
   // ---- drawing ----
@@ -2159,11 +2166,13 @@
       var from = rowInfo.start, count = rowInfo.count, mW = rowInfo.mW;
       var staffEnd = count ? G.padX + G.meta + count * mW : G.padX + G.gridW;
       for (var k = 0; k < 5; k++) out += svgLine(G.padX, top + k * 9 * s, staffEnd, top + k * 9 * s, Math.max(0.6, s));
-      out += '<text class="clef" x="'+px(G.padX + 2 * s)+'" y="'+px(top + 39.6 * s)+'" font-size="'+px(54 * s)+'">𝄞</text>';
+      // A smaller clef keeps its G curl on the second line and stays inside the line's height.
+      var ck = G.clefK;
+      out += '<text class="clef" x="'+px(G.padX + 2 * s)+'" y="'+px(top + (27 + 12.6 * ck) * s)+'" font-size="'+px(54 * ck * s)+'">𝄞</text>';
       if (row === 0){
         var ts = String(meterAt(bars, d.timeSig, 0)).split("/");
-        out += '<text class="timesig" x="'+px(G.padX + 50 * s)+'" y="'+px(top + 17 * s)+'" font-size="'+px(19 * s)+'" text-anchor="middle">'+escapeHtml(ts[0] || "4")+'</text>';
-        out += '<text class="timesig" x="'+px(G.padX + 50 * s)+'" y="'+px(top + 35 * s)+'" font-size="'+px(19 * s)+'" text-anchor="middle">'+escapeHtml(ts[1] || "4")+'</text>';
+        out += '<text class="timesig" x="'+px(G.padX + (G.metaBase - 16) * s)+'" y="'+px(top + 17 * s)+'" font-size="'+px(19 * s)+'" text-anchor="middle">'+escapeHtml(ts[0] || "4")+'</text>';
+        out += '<text class="timesig" x="'+px(G.padX + (G.metaBase - 16) * s)+'" y="'+px(top + 35 * s)+'" font-size="'+px(19 * s)+'" text-anchor="middle">'+escapeHtml(ts[1] || "4")+'</text>';
       }
       for (var c = 0; c < count; c++){
         var i = from + c, b = bars[i], next = bars[i + 1];
@@ -2191,8 +2200,8 @@
         if (a > z) return;
         var x1 = G.padX + G.meta + (a - from) * mW + (a === g.from ? 3 * s : 0);
         var x2 = G.padX + G.meta + (z - from + 1) * mW - (z === g.to ? 3 * s : 0);
-        var voltaFont = voltaFontFor(s);
-        var yTop = top - BAND * s + annRowFor(s) + 2, yHook = top - 3 * s;
+        var voltaFont = voltaFontFor(s, G.band);
+        var yTop = top - G.band * s + annRowFor(s, G.band, G.annK) + 2, yHook = top - 3 * s;
         out += svgLine(x1, yTop, x2, yTop, 1.4 * s);
         if (a === g.from){
           out += svgLine(x1, yTop, x1, yHook, 1.4 * s);
@@ -2206,15 +2215,15 @@
 
   function overlaysHtml(d, G){
     var s = G.s, bars = d.bars, cells = "", texts = "";
-    var chordFont = Math.max(13, 21 * s);
-    var annFont = annFontFor(s);
-    var annRow = annRowFor(s);
+    var chordFont = Math.max(13, 21 * s) * G.chordK;
+    var annFont = annFontFor(s, G.band, G.annK);
+    var annRow = annRowFor(s, G.band, G.annK);
     var rhCells = barCells(d);
     // How far along its line the last section name or note reaches, so the bars under it are known.
     var annReach = -1, annReachRow = -1;
     bars.forEach(function(b, i){
       var box = barBox(G, i);
-      cells += '<div class="bar-cell" data-i="'+i+'" style="left:'+px(box.x)+'px;top:'+px(box.top)+'px;width:'+px(box.mW)+'px;height:'+px(ROW_BASE * s)+'px"></div>';
+      cells += '<div class="bar-cell" data-i="'+i+'" style="left:'+px(box.x)+'px;top:'+px(box.top)+'px;width:'+px(box.mW)+'px;height:'+px(G.rowBase * s)+'px"></div>';
 
       var left = "", right = "";
       if (b.startMark === "segno") left += '<span class="ann-glyph" title="Segno">𝄋</span>';
@@ -2398,7 +2407,7 @@
   // On a phone a tapped song opens here: drawn on a narrow page whose lines stay at full size,
   // scaled to the screen width, with nothing editable. ‹ › and a sideways swipe move through
   // the list the song was opened from (the project's songs or a setlist).
-  var READ_W = 480, READ_PAD_X = 10, READ_MAX_SCALE = 1.6;
+  var READ_PAD_X = 6, READ_MAX_SCALE = 1.6;
   var reader = null;            // {ids:[song ids], i:index, doc:normalized song or null}
   var readerToken = 0;
   var wakeLock = null;
@@ -2449,6 +2458,12 @@
     });
   }
 
+  // The whole song should fit the screen and stay readable. Lines have a fixed height, so the
+  // page gets as wide as the screen's shape needs for all of them to fit; past READ_MAX_W
+  // (a long song, or a phone held sideways) the chords would get too small and the page scrolls.
+  var READ_METRICS = {band:36, metaBase:46, clefK:0.62, chordK:1.25, annK:1.2, padBottom:6};
+  var READ_MIN_W = 420, READ_MAX_W = 700;
+
   function renderReader(){
     if (!reader || !reader.doc) return;
     var d = reader.doc, scroll = document.getElementById("readerScroll");
@@ -2456,37 +2471,45 @@
     if (d.key) facts += 'TON <b>'+escapeHtml(d.key)+'</b>';
     if (d.tempo) facts += 'TEMPO <b>'+escapeHtml(d.tempo)+'</b>';
     if (d.timeSig) facts += 'ÖLÇÜ <b>'+escapeHtml(d.timeSig)+'</b>';
-    var G = computeGeom(d, 6, {w:READ_W, h:0, padX:READ_PAD_X, fit:true});
     scroll.innerHTML =
-      '<div class="reader-head"><div>'+
-        '<div class="reader-title" id="readerTitle">'+escapeHtml(d.title || "İsimsiz şarkı")+'</div>'+
-        (d.artist ? '<div class="reader-artist">'+escapeHtml(d.artist)+'</div>' : '')+
+      '<div class="reader-head"><div class="reader-name">'+
+        '<span class="reader-title" id="readerTitle">'+escapeHtml(d.title || "İsimsiz şarkı")+'</span>'+
+        (d.artist ? ' <span class="reader-artist">'+escapeHtml(d.artist)+'</span>' : '')+
       '</div><div class="reader-facts">'+facts+'</div></div>'+
-      '<div class="reader-fit" id="readerFit"><div class="reader-page" id="readerPage" style="width:'+px(G.pageW)+'px;height:'+px(G.pageH)+'px">'+
-        gridSvg(d, G) + overlaysHtml(d, G)+
-      '</div></div>'+
-      (reader.ids.length > 1 ? '<p class="reader-hint">Sonraki şarkı için sola, önceki için sağa kaydırın.</p>' : '');
-    var page = document.getElementById("readerPage");
-    Array.prototype.forEach.call(page.querySelectorAll("[contenteditable], [id]"), function(el){
+      '<div class="reader-fit" id="readerFit"></div>';
+    var fit = document.getElementById("readerFit");
+    var cs = getComputedStyle(scroll);
+    var availW = scroll.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    var availH = scroll.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - fit.offsetTop + scroll.querySelector(".reader-head").offsetTop;
+    if (availW <= 0) return;
+    var page = {h:0, padX:READ_PAD_X, fit:true};
+    for (var k in READ_METRICS) page[k] = READ_METRICS[k];
+    // Room under the staff only where slash rhythms hang their stems below it.
+    var stems = d.bars.some(function(b, i){ return !isRepeatMeasure(b.chord) && !isRestMeasure(b.chord) && rhythmOf(b, barCellsAt(d, i)); });
+    page.rowBase = page.band + STAFF_H + (stems ? 14 : 5);
+    page.w = READ_MIN_W;
+    var G = computeGeom(d, 4, page);
+    if (availH > 0) page.w = Math.max(READ_MIN_W, Math.min(READ_MAX_W, G.pageH * availW / availH));
+    page.w = Math.max(page.w, availW / READ_MAX_SCALE);
+    G = computeGeom(d, 4, page);
+    var scale = availW / G.pageW;
+    fit.style.width = availW + "px";
+    fit.style.height = (G.pageH * scale) + "px";
+    fit.innerHTML = '<div class="reader-page" id="readerPage" style="width:'+px(G.pageW)+'px;height:'+px(G.pageH)+'px;transform:scale('+scale.toFixed(4)+')">'+
+      gridSvg(d, G) + overlaysHtml(d, G)+'</div>';
+    var pageEl = document.getElementById("readerPage");
+    Array.prototype.forEach.call(pageEl.querySelectorAll("[contenteditable], [id]"), function(el){
       el.removeAttribute("contenteditable");
       el.removeAttribute("id");
     });
-    Array.prototype.forEach.call(page.querySelectorAll(".chord-slot"), fitChordText);
-    fitReader();
+    Array.prototype.forEach.call(pageEl.querySelectorAll(".chord-slot"), fitChordText);
   }
 
-  function fitReader(){
-    var fit = document.getElementById("readerFit"), page = document.getElementById("readerPage");
-    if (!fit || !page || !reader || !reader.doc) return;
-    var room = fit.parentElement.clientWidth - 24;
-    if (room <= 0) return;
-    var w = parseFloat(page.style.width), h = parseFloat(page.style.height);
-    var scale = Math.min(READ_MAX_SCALE, room / w);
-    page.style.transform = "scale(" + scale.toFixed(4) + ")";
-    fit.style.width = (w * scale) + "px";
-    fit.style.height = (h * scale) + "px";
-  }
-  window.addEventListener("resize", fitReader);
+  var readerResizeTimer = null;
+  window.addEventListener("resize", function(){
+    clearTimeout(readerResizeTimer);
+    readerResizeTimer = setTimeout(renderReader, 120);
+  });
 
   function readerStep(delta){
     if (!reader) return;
@@ -2654,7 +2677,7 @@
         var a = Math.max(r.from, info.start), z = Math.min(r.to, info.start + info.count - 1);
         if (a > z) continue;
         var box = barBox(geom, a);
-        html += '<div class="sel-rect" style="left:'+px(box.x)+'px;top:'+px(box.top)+'px;width:'+px((z - a + 1) * info.mW)+'px;height:'+px(ROW_BASE * geom.s)+'px"></div>';
+        html += '<div class="sel-rect" style="left:'+px(box.x)+'px;top:'+px(box.top)+'px;width:'+px((z - a + 1) * info.mW)+'px;height:'+px(geom.rowBase * geom.s)+'px"></div>';
       }
     }
     layer.innerHTML = html;
