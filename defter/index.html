@@ -528,11 +528,81 @@
   #sheetHost{ width:794px; max-width:100%; }
   .page-fit{ position:relative; margin:0 auto; }
   .page-fit > .page{ transform-origin:top left; }
+  /* On a phone the list and the open song take turns on the screen: the list fills it, and
+     tapping a song opens the reader. The editor opens from the reader's Düzenle button. */
+  .m-back{ display:none; }
   @media (max-width: 900px){
     .app{ grid-template-columns:1fr; }
-    .sidebar{ min-height:0; max-height:46vh; overflow:auto; border-right:0; border-bottom:1px solid var(--line); padding:14px 0; }
-    .stage{ padding:16px 12px 40px; }
+    .sidebar{ min-height:100vh; min-height:100dvh; border-right:0; padding:14px 0 calc(14px + env(safe-area-inset-bottom)); }
+    .song-item{ padding:13px 12px; }
+    .song-title{ font-size:16px; }
+    .song-artist{ font-size:12.5px; }
+    .song-num, .song-key{ font-size:13px; }
+    .tab{ font-size:14px; padding:12px 4px; }
+    .btn-ghost{ font-size:14px; padding:12px 10px; }
+    .stage{ display:none; padding:0 12px 40px; }
+    body.m-edit .sidebar{ display:none; }
+    body.m-edit .stage{ display:flex; }
+    .m-back{
+      display:flex; align-items:center; gap:10px;
+      position:sticky; top:0; z-index:20;
+      width:calc(100% + 24px); margin:0 -12px 12px;
+      padding:10px 12px; padding-top:max(10px, env(safe-area-inset-top));
+      background:var(--shell); border-bottom:1px solid var(--line);
+    }
+    .m-back-title{ flex:1; min-width:0; font:600 15px "IBM Plex Sans",sans-serif; color:var(--text-hi); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .page-help{ display:none; }
+    .btn, .tb-btn{ min-height:36px; }
+    /* setlist page: titles get the width, artists step aside */
+    .sheet{ padding:22px 14px 30px; }
+    .spec-title{ font-size:24px; }
+    .sl-row{ grid-template-columns:24px 26px minmax(0,1fr) auto 30px; gap:8px; padding:11px 0; }
+    .sl-handle{ width:24px; height:36px; }
+    .sl-title{ font-size:18px; white-space:normal; }
+    .sl-artist, .sl-pick-artist{ display:none; }
+    .sl-remove{ width:30px; height:30px; }
+    .sl-pick{ grid-template-columns:18px minmax(0,1fr) 44px; padding:10px 8px; }
+    .sl-pick-title{ font-size:15px; }
   }
+
+  /* ---------- Phone reader: the open song at full width, nothing to edit ---------- */
+  .reader{
+    position:fixed; inset:0; z-index:60;
+    display:flex; flex-direction:column;
+    background:var(--paper); color:var(--ink);
+  }
+  .reader-bar{
+    flex:none;
+    display:flex; align-items:center; gap:8px;
+    padding:8px 10px; padding-top:max(8px, env(safe-area-inset-top));
+    background:var(--shell); border-bottom:1px solid var(--line);
+  }
+  .reader-btn{
+    min-width:44px; height:40px;
+    padding:0 12px;
+    font:600 14px "IBM Plex Sans",sans-serif;
+    color:var(--text-hi);
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    border-radius:8px;
+    cursor:pointer;
+  }
+  .reader-btn.arrow{ font-size:20px; padding:0; }
+  .reader-btn:disabled{ opacity:.35; cursor:default; }
+  .reader-btn:focus-visible{ outline:2px solid var(--brass); outline-offset:2px; }
+  .reader-pos{ flex:1; text-align:center; font:600 13px "IBM Plex Mono",monospace; color:var(--text-lo); font-variant-numeric:tabular-nums; }
+  .reader-scroll{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; padding:14px 12px calc(40px + env(safe-area-inset-bottom)); }
+  .reader-head{ display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:4px 16px; border-bottom:2px solid var(--ink); padding-bottom:8px; margin-bottom:6px; }
+  .reader-title{ font:700 24px/1.15 "Fraunces",serif; }
+  .reader-artist{ font:italic 400 14px "Fraunces",serif; color:#4b4a42; margin-top:2px; }
+  .reader-facts{ font:500 12px "IBM Plex Mono",monospace; color:#4b4a42; white-space:nowrap; }
+  .reader-facts b{ color:var(--ink); font-weight:700; margin-right:10px; }
+  .reader-fit{ position:relative; }
+  .reader-page{ position:absolute; left:0; top:0; transform-origin:top left; }
+  .reader-page .chord-slot, .reader-page .bar-cell{ pointer-events:none; cursor:default; }
+  .reader-page .bar-cell:hover{ background:none; }
+  .reader-empty{ padding:40px 4px; color:#6b6a5f; font-style:italic; }
+  .reader-hint{ margin:18px 0 0; font-size:12px; color:#8a8873; text-align:center; }
   .page{
     position:relative;
     flex:none;
@@ -698,7 +768,8 @@
 
   @media print{
     body{ background:#fff; }
-    .sidebar, .toolbar, .import-bar, .page-help, .sel-layer, .simile-btn, .foot-note{ display:none !important; }
+    .sidebar, .toolbar, .import-bar, .page-help, .sel-layer, .simile-btn, .foot-note, .reader, .m-back{ display:none !important; }
+    .stage{ display:flex !important; }
     .app{ display:block; }
     .stage{ padding:0; }
     .page{ box-shadow:none; border-radius:0; }
@@ -743,6 +814,10 @@
   </aside>
 
   <main class="stage">
+    <div class="m-back">
+      <button class="reader-btn" id="mBackBtn" type="button">‹ Liste</button>
+      <span class="m-back-title" id="mBackTitle"></span>
+    </div>
     <div class="toolbar" id="toolbar" hidden>
       <div class="toolbar-row">
         <div class="toolbar-group" id="songTools">
@@ -812,6 +887,17 @@
     </div>
     <div id="sheetHost"></div>
   </main>
+</div>
+
+<div class="reader" id="reader" role="dialog" aria-modal="true" aria-labelledby="readerTitle" hidden>
+  <div class="reader-bar">
+    <button class="reader-btn" id="readerClose" type="button">‹ Liste</button>
+    <button class="reader-btn arrow" id="readerPrev" type="button" aria-label="Önceki şarkı">‹</button>
+    <span class="reader-pos" id="readerPos"></span>
+    <button class="reader-btn arrow" id="readerNext" type="button" aria-label="Sonraki şarkı">›</button>
+    <button class="reader-btn" id="readerEdit" type="button">Düzenle</button>
+  </div>
+  <div class="reader-scroll" id="readerScroll"></div>
 </div>
 
 <script>
@@ -1315,11 +1401,22 @@
     }
     ul.innerHTML = items.join("");
     Array.prototype.forEach.call(ul.querySelectorAll(".song-item"), function(li){
-      li.addEventListener("click", function(){ selectItem(li.getAttribute("data-id")); });
+      li.addEventListener("click", function(){ openListItem(li.getAttribute("data-id")); });
       li.addEventListener("keydown", function(e){
-        if (e.key === "Enter" || e.key === " "){ e.preventDefault(); selectItem(li.getAttribute("data-id")); }
+        if (e.key === "Enter" || e.key === " "){ e.preventDefault(); openListItem(li.getAttribute("data-id")); }
       });
     });
+  }
+
+  // On a phone a song opens in the reader and a setlist fills the screen; elsewhere both open beside the list.
+  function openListItem(id){
+    if (!isPhone()){ selectItem(id); return; }
+    if (view === "songs"){
+      openReader(id, artistSongs().map(function(s){ return s.id; }));
+      return;
+    }
+    selectItem(id);
+    if (selectedId === id) setPhoneEdit(true);
   }
 
   function addSong(){
@@ -1328,7 +1425,7 @@
     var order = artistSongs().reduce(function(m, s){ return Math.max(m, s.order || 0); }, 0) + 1;
     var ref = db.collection("songs").doc();
     ref.set({artistId:currentArtistId, order:order, title:"Yeni Şarkı", artist:"", key:"", tempo:"", timeSig:"4/4", layout:{lines:DEFAULT_LINES, perLine:DEFAULT_PER_LINE}, bars:blankBars(DEFAULT_LINES * DEFAULT_PER_LINE)})
-      .then(function(){ selectItem(ref.id, true); })
+      .then(function(){ selectItem(ref.id, true); if (isPhone()) setPhoneEdit(true); })
       .catch(function(){ showEmpty("Şarkı eklenemedi — tekrar deneyin."); });
   }
 
@@ -1337,7 +1434,7 @@
     if (dirty && !confirm(leaveMessage())) return;
     var ref = db.collection("setlists").doc();
     ref.set({artistId:currentArtistId, name:"Yeni setlist", songIds:[], createdAt:new Date().toISOString()})
-      .then(function(){ focusNameFor = ref.id; selectItem(ref.id, true); })
+      .then(function(){ focusNameFor = ref.id; selectItem(ref.id, true); if (isPhone()) setPhoneEdit(true); })
       .catch(function(){ showEmpty("Setlist eklenemedi — tekrar deneyin."); });
   }
 
@@ -1401,6 +1498,7 @@
     del.title = view === "songs" ? "Açık şarkıyı sil" : "Açık setlisti sil";
     document.getElementById("songTools").hidden = view !== "songs";
     document.getElementById("marksBar").hidden = view !== "songs";
+    updatePhoneTitle();
     if (!currentDoc){ showEmpty(emptyMessage()); return; }
     if (view === "songs") renderSheet(); else renderSetlist();
   }
@@ -1493,7 +1591,11 @@
     nameEl.addEventListener("blur", function(){ saveDoc({name: nameEl.textContent.trim()}); });
 
     Array.prototype.forEach.call(host.querySelectorAll("[data-open]"), function(b){
-      b.addEventListener("click", function(){ openSong(b.getAttribute("data-open")); });
+      b.addEventListener("click", function(){
+        var sid = b.getAttribute("data-open");
+        if (isPhone()) openReader(sid, normalizeSetlist(currentDoc).songIds);
+        else openSong(sid);
+      });
     });
 
     Array.prototype.forEach.call(host.querySelectorAll(".sl-remove"), function(b){
@@ -1770,7 +1872,10 @@
   function rowBarCount(layout, row){ return layout.rowCounts[row] || layout.perLine; }
 
   // Bars fill the lines in order. A line with its own bar count divides the width by that count.
-  function computeGeom(d, gridTop){
+  // A song page is A4 by default. The phone reader passes its own width and fit:true, which
+  // keeps every line at full size and lets the page grow to the lines that hold bars.
+  function computeGeom(d, gridTop, page){
+    page = page || {w:PAGE_W, h:PAGE_H, padX:PAD_X, fit:false};
     var n = d.bars.length, layout = d.layout;
     var rows = [], barRow = [];
     for (var start = 0, r = 0; start < n; r++){
@@ -1783,14 +1888,15 @@
       start += count;
     }
     var needed = Math.max(1, rows.length);
-    var lines = Math.max(layout.lines, needed);
+    var lines = page.fit ? needed : Math.max(layout.lines, needed);
     for (var e = rows.length; e < lines; e++) rows.push({start:n, count:0, cfg:rowBarCount(layout, e)});
-    var rowH = (PAGE_H - PAD_BOTTOM - gridTop) / lines;
+    var pageH = page.fit ? gridTop + lines * ROW_BASE + PAD_BOTTOM : page.h;
+    var rowH = (pageH - PAD_BOTTOM - gridTop) / lines;
     var s = Math.min(1, rowH / ROW_BASE);
-    var gridW = PAGE_W - 2 * PAD_X;
+    var gridW = page.w - 2 * page.padX;
     var meta = META_BASE * s;
     rows.forEach(function(row){ row.mW = (gridW - meta) / row.cfg; });
-    return {n:n, lines:lines, needed:needed, gridTop:gridTop, rowH:rowH, s:s, gridW:gridW, meta:meta, rows:rows, barRow:barRow};
+    return {n:n, lines:lines, needed:needed, gridTop:gridTop, rowH:rowH, s:s, gridW:gridW, meta:meta, rows:rows, barRow:barRow, pageW:page.w, pageH:pageH, padX:page.padX};
   }
 
   function rowStaffTop(G, row){ return G.gridTop + row * G.rowH + (G.rowH - ROW_BASE * G.s) / 2 + BAND * G.s; }
@@ -1798,7 +1904,7 @@
   function barBox(G, i){
     var r = G.barRow[i], row = G.rows[r];
     var staffTop = rowStaffTop(G, r);
-    var x = PAD_X + G.meta + (i - row.start) * row.mW;
+    var x = G.padX + G.meta + (i - row.start) * row.mW;
     return {row:r, x:x, right:x + row.mW, mW:row.mW, staffTop:staffTop, top:staffTop - BAND * G.s};
   }
 
@@ -2051,17 +2157,17 @@
     G.rows.forEach(function(rowInfo, row){
       var top = rowStaffTop(G, row);
       var from = rowInfo.start, count = rowInfo.count, mW = rowInfo.mW;
-      var staffEnd = count ? PAD_X + G.meta + count * mW : PAD_X + G.gridW;
-      for (var k = 0; k < 5; k++) out += svgLine(PAD_X, top + k * 9 * s, staffEnd, top + k * 9 * s, Math.max(0.6, s));
-      out += '<text class="clef" x="'+px(PAD_X + 2 * s)+'" y="'+px(top + 39.6 * s)+'" font-size="'+px(54 * s)+'">𝄞</text>';
+      var staffEnd = count ? G.padX + G.meta + count * mW : G.padX + G.gridW;
+      for (var k = 0; k < 5; k++) out += svgLine(G.padX, top + k * 9 * s, staffEnd, top + k * 9 * s, Math.max(0.6, s));
+      out += '<text class="clef" x="'+px(G.padX + 2 * s)+'" y="'+px(top + 39.6 * s)+'" font-size="'+px(54 * s)+'">𝄞</text>';
       if (row === 0){
         var ts = String(meterAt(bars, d.timeSig, 0)).split("/");
-        out += '<text class="timesig" x="'+px(PAD_X + 50 * s)+'" y="'+px(top + 17 * s)+'" font-size="'+px(19 * s)+'" text-anchor="middle">'+escapeHtml(ts[0] || "4")+'</text>';
-        out += '<text class="timesig" x="'+px(PAD_X + 50 * s)+'" y="'+px(top + 35 * s)+'" font-size="'+px(19 * s)+'" text-anchor="middle">'+escapeHtml(ts[1] || "4")+'</text>';
+        out += '<text class="timesig" x="'+px(G.padX + 50 * s)+'" y="'+px(top + 17 * s)+'" font-size="'+px(19 * s)+'" text-anchor="middle">'+escapeHtml(ts[0] || "4")+'</text>';
+        out += '<text class="timesig" x="'+px(G.padX + 50 * s)+'" y="'+px(top + 35 * s)+'" font-size="'+px(19 * s)+'" text-anchor="middle">'+escapeHtml(ts[1] || "4")+'</text>';
       }
       for (var c = 0; c < count; c++){
         var i = from + c, b = bars[i], next = bars[i + 1];
-        var xL = PAD_X + G.meta + c * mW, xR = xL + mW;
+        var xL = G.padX + G.meta + c * mW, xR = xL + mW;
         if (b.repeatStart) out += startSign(xL, top, s);
         var meter = showsMeter(d, i);
         if (meter){
@@ -2071,7 +2177,7 @@
         }
         if (b.repeatEnd || closedEnd[i]) out += endSign(xR, top, s);
         else if (i === G.n - 1) out += finalBar(xR, top, s);
-        else if (!(next && next.repeatStart && c < count - 1)) out += vBar(Math.min(xR, PAD_X + G.gridW - 0.6), top, s, 1.3 * s);
+        else if (!(next && next.repeatStart && c < count - 1)) out += vBar(Math.min(xR, G.padX + G.gridW - 0.6), top, s, 1.3 * s);
         if (isRepeatMeasure(b.chord)) out += simileSign(xL + mW / 2, top, s, i);
         else if (isRestMeasure(b.chord)) out += restBarSign(xL + mW / 2, top, s, i);
         else {
@@ -2083,8 +2189,8 @@
       groups.forEach(function(g){
         var a = Math.max(g.from, from), z = Math.min(g.to, from + count - 1);
         if (a > z) return;
-        var x1 = PAD_X + G.meta + (a - from) * mW + (a === g.from ? 3 * s : 0);
-        var x2 = PAD_X + G.meta + (z - from + 1) * mW - (z === g.to ? 3 * s : 0);
+        var x1 = G.padX + G.meta + (a - from) * mW + (a === g.from ? 3 * s : 0);
+        var x2 = G.padX + G.meta + (z - from + 1) * mW - (z === g.to ? 3 * s : 0);
         var voltaFont = voltaFontFor(s);
         var yTop = top - BAND * s + annRowFor(s) + 2, yHook = top - 3 * s;
         out += svgLine(x1, yTop, x2, yTop, 1.4 * s);
@@ -2095,7 +2201,7 @@
         if (z === g.to && g.closed) out += svgLine(x2, yTop, x2, yHook, 1.4 * s);
       });
     });
-    return '<svg class="page-svg" width="'+PAGE_W+'" height="'+PAGE_H+'" viewBox="0 0 '+PAGE_W+' '+PAGE_H+'" aria-hidden="true">'+out+'</svg>';
+    return '<svg class="page-svg" width="'+px(G.pageW)+'" height="'+px(G.pageH)+'" viewBox="0 0 '+px(G.pageW)+' '+px(G.pageH)+'" aria-hidden="true">'+out+'</svg>';
   }
 
   function overlaysHtml(d, G){
@@ -2130,7 +2236,7 @@
         annReachRow = box.row;
       }
       if (right){
-        texts += '<div class="ann ann-right" style="right:'+px(PAGE_W - box.right + 3 * s)+'px;top:'+px(box.top + 1)+'px;height:'+px(annRow)+'px;font-size:'+px(annFont)+'px">'+right+'</div>';
+        texts += '<div class="ann ann-right" style="right:'+px(G.pageW - box.right + 3 * s)+'px;top:'+px(box.top + 1)+'px;height:'+px(annRow)+'px;font-size:'+px(annFont)+'px">'+right+'</div>';
       }
       var rh = isRepeatMeasure(b.chord) || isRestMeasure(b.chord) ? null : rhythmOf(b, barCellsAt(d, i));
       if (rh){
@@ -2287,6 +2393,202 @@
   }
   window.addEventListener("resize", fitPage);
   if (window.ResizeObserver) new ResizeObserver(function(){ fitPage(); }).observe(document.getElementById("sheetHost"));
+
+  // ---------------- Phone reader ----------------
+  // On a phone a tapped song opens here: drawn on a narrow page whose lines stay at full size,
+  // scaled to the screen width, with nothing editable. ‹ › and a sideways swipe move through
+  // the list the song was opened from (the project's songs or a setlist).
+  var READ_W = 480, READ_PAD_X = 10, READ_MAX_SCALE = 1.6;
+  var reader = null;            // {ids:[song ids], i:index, doc:normalized song or null}
+  var readerToken = 0;
+  var wakeLock = null;
+  var phoneQuery = window.matchMedia ? window.matchMedia("(max-width: 900px)") : null;
+
+  function isPhone(){ return !!(phoneQuery && phoneQuery.matches); }
+
+  function openReader(id, ids){
+    ids = ids.filter(function(x){ return !!songById(x); });
+    if (ids.indexOf(id) < 0) ids = [id];
+    var wasOpen = !!reader;
+    reader = {ids:ids, i:ids.indexOf(id), doc:null};
+    document.getElementById("reader").hidden = false;
+    document.body.style.overflow = "hidden";
+    if (!wasOpen) pushPhoneState("reader");
+    keepAwake(true);
+    showReaderSong();
+  }
+
+  // how: "history" when the back button closed it, "keep" when the caller reuses its history
+  // entry, otherwise its entry is taken off the history too.
+  function closeReader(how){
+    if (!reader) return;
+    reader = null;
+    readerToken++;
+    document.getElementById("reader").hidden = true;
+    document.body.style.overflow = "";
+    keepAwake(false);
+    if (how !== "history" && how !== "keep" && history.state && history.state.rd === "reader"){ skipPop++; history.back(); }
+  }
+
+  function showReaderSong(){
+    var r = reader, id = r.ids[r.i], token = ++readerToken;
+    var s = songById(id);
+    document.getElementById("readerPos").textContent = r.ids.length > 1 ? (r.i + 1) + " / " + r.ids.length : "";
+    document.getElementById("readerPrev").disabled = r.i <= 0;
+    document.getElementById("readerNext").disabled = r.i >= r.ids.length - 1;
+    var scroll = document.getElementById("readerScroll");
+    scroll.innerHTML = '<div class="reader-head"><div><div class="reader-title" id="readerTitle">'+escapeHtml(s ? s.title || "İsimsiz şarkı" : "")+'</div></div></div>';
+    scroll.scrollTop = 0;
+    db.doc("songs/" + id).get().then(function(snap){
+      if (token !== readerToken) return;
+      if (!snap.exists){ scroll.innerHTML = '<div class="reader-empty">Bu şarkı bulunamadı.</div>'; return; }
+      reader.doc = normalizeDoc(clone(snap.data()));
+      renderReader();
+    }, function(){
+      if (token === readerToken) scroll.innerHTML = '<div class="reader-empty">Şarkı açılamadı.</div>';
+    });
+  }
+
+  function renderReader(){
+    if (!reader || !reader.doc) return;
+    var d = reader.doc, scroll = document.getElementById("readerScroll");
+    var facts = "";
+    if (d.key) facts += 'TON <b>'+escapeHtml(d.key)+'</b>';
+    if (d.tempo) facts += 'TEMPO <b>'+escapeHtml(d.tempo)+'</b>';
+    if (d.timeSig) facts += 'ÖLÇÜ <b>'+escapeHtml(d.timeSig)+'</b>';
+    var G = computeGeom(d, 6, {w:READ_W, h:0, padX:READ_PAD_X, fit:true});
+    scroll.innerHTML =
+      '<div class="reader-head"><div>'+
+        '<div class="reader-title" id="readerTitle">'+escapeHtml(d.title || "İsimsiz şarkı")+'</div>'+
+        (d.artist ? '<div class="reader-artist">'+escapeHtml(d.artist)+'</div>' : '')+
+      '</div><div class="reader-facts">'+facts+'</div></div>'+
+      '<div class="reader-fit" id="readerFit"><div class="reader-page" id="readerPage" style="width:'+px(G.pageW)+'px;height:'+px(G.pageH)+'px">'+
+        gridSvg(d, G) + overlaysHtml(d, G)+
+      '</div></div>'+
+      (reader.ids.length > 1 ? '<p class="reader-hint">Sonraki şarkı için sola, önceki için sağa kaydırın.</p>' : '');
+    var page = document.getElementById("readerPage");
+    Array.prototype.forEach.call(page.querySelectorAll("[contenteditable], [id]"), function(el){
+      el.removeAttribute("contenteditable");
+      el.removeAttribute("id");
+    });
+    Array.prototype.forEach.call(page.querySelectorAll(".chord-slot"), fitChordText);
+    fitReader();
+  }
+
+  function fitReader(){
+    var fit = document.getElementById("readerFit"), page = document.getElementById("readerPage");
+    if (!fit || !page || !reader || !reader.doc) return;
+    var room = fit.parentElement.clientWidth - 24;
+    if (room <= 0) return;
+    var w = parseFloat(page.style.width), h = parseFloat(page.style.height);
+    var scale = Math.min(READ_MAX_SCALE, room / w);
+    page.style.transform = "scale(" + scale.toFixed(4) + ")";
+    fit.style.width = (w * scale) + "px";
+    fit.style.height = (h * scale) + "px";
+  }
+  window.addEventListener("resize", fitReader);
+
+  function readerStep(delta){
+    if (!reader) return;
+    var i = reader.i + delta;
+    if (i < 0 || i >= reader.ids.length) return;
+    reader.i = i;
+    reader.doc = null;
+    showReaderSong();
+  }
+
+  // The screen stays on while a song is open, so it does not go dark on stage.
+  function keepAwake(on){
+    if (!on){
+      if (wakeLock){ try { wakeLock.release(); } catch(e){} }
+      wakeLock = null;
+      return;
+    }
+    if (!navigator.wakeLock || wakeLock) return;
+    navigator.wakeLock.request("screen").then(function(l){
+      if (!reader){ l.release(); return; }
+      wakeLock = l;
+      l.addEventListener("release", function(){ if (wakeLock === l) wakeLock = null; });
+    }, function(){});
+  }
+  document.addEventListener("visibilitychange", function(){
+    if (document.visibilityState === "visible" && reader) keepAwake(true);
+  });
+
+  (function(){
+    var x0 = null, y0 = 0;
+    var scroll = document.getElementById("readerScroll");
+    scroll.addEventListener("touchstart", function(e){
+      if (e.touches.length !== 1){ x0 = null; return; }
+      x0 = e.touches[0].clientX; y0 = e.touches[0].clientY;
+    }, {passive:true});
+    scroll.addEventListener("touchend", function(e){
+      if (x0 === null) return;
+      var t = e.changedTouches[0], dx = t.clientX - x0, dy = t.clientY - y0;
+      x0 = null;
+      if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.8) readerStep(dx < 0 ? 1 : -1);
+    }, {passive:true});
+  })();
+
+  document.getElementById("readerClose").addEventListener("click", function(){ closeReader(); });
+  document.getElementById("readerPrev").addEventListener("click", function(){ readerStep(-1); });
+  document.getElementById("readerNext").addEventListener("click", function(){ readerStep(1); });
+  document.getElementById("readerEdit").addEventListener("click", function(){
+    var id = reader && reader.ids[reader.i];
+    if (!id) return;
+    if (view === "songs") selectItem(id); else openSong(id);
+    if (selectedId !== id){ closeReader(); return; }
+    var editing = document.body.classList.contains("m-edit");
+    // The reader's history entry becomes the editor's, so back returns to the list.
+    closeReader(editing ? undefined : "keep");
+    if (!editing){
+      try { history.replaceState({rd:"edit"}, ""); } catch(e){}
+      document.body.classList.add("m-edit");
+      window.scrollTo(0, 0);
+      fitPage();
+    }
+    updatePhoneTitle();
+  });
+  document.addEventListener("keydown", function(e){
+    if (!reader) return;
+    if (e.key === "Escape"){ e.preventDefault(); closeReader(); }
+    else if (e.key === "ArrowRight"){ e.preventDefault(); readerStep(1); }
+    else if (e.key === "ArrowLeft"){ e.preventDefault(); readerStep(-1); }
+  });
+
+  // ---- phone screens: list ↔ open song or setlist ----
+  // The phone's back button steps back through the same screens.
+  var skipPop = 0;
+  function pushPhoneState(name){
+    try { history.pushState({rd:name}, ""); } catch(e){}
+  }
+  function setPhoneEdit(on){
+    var was = document.body.classList.contains("m-edit");
+    document.body.classList.toggle("m-edit", on);
+    if (on && !was){ pushPhoneState("edit"); window.scrollTo(0, 0); fitPage(); }
+    if (!on && was && history.state && history.state.rd === "edit"){ skipPop++; history.back(); }
+    updatePhoneTitle();
+  }
+  function updatePhoneTitle(){
+    var t = "";
+    if (currentDoc) t = view === "songs" ? (currentDoc.title || "İsimsiz şarkı") : (currentDoc.name || "Setlist");
+    document.getElementById("mBackTitle").textContent = t;
+  }
+  // Going back to the list loses nothing: an unsaved song stays open with its Kaydet button.
+  window.addEventListener("popstate", function(){
+    if (skipPop){ skipPop--; return; }
+    if (reader){ closeReader("history"); return; }
+    document.body.classList.remove("m-edit");
+  });
+  document.getElementById("mBackBtn").addEventListener("click", function(){
+    if (history.state && history.state.rd === "edit") history.back();
+    else document.body.classList.remove("m-edit");
+  });
+  if (phoneQuery){
+    var onPhoneChange = function(){ if (!isPhone()){ closeReader(); document.body.classList.remove("m-edit"); } };
+    if (phoneQuery.addEventListener) phoneQuery.addEventListener("change", onPhoneChange);
+    else if (phoneQuery.addListener) phoneQuery.addListener(onPhoneChange);
+  }
 
   function renderGrid(){
     var d = currentDoc;
