@@ -2121,7 +2121,7 @@
   // Chords over a written rhythm sit above the hits they belong to, in order.
   function rhythmChordsHtml(chord, r, rb, barX, top, h, font, tieIn){
     var tokens = String(chord || "").trim().split(/\s+/).filter(Boolean);
-    var html = '<div class="rh-chords" aria-hidden="true" style="left:'+px(barX)+'px;top:'+px(top)+'px;height:'+px(h)+'px;line-height:'+px(h)+'px;font-size:'+px(font)+'px">';
+    var html = '<div class="rh-chords" aria-hidden="true" style="left:'+px(barX)+'px;top:'+px(top)+'px;width:'+px(rb.x0 + rb.w - barX + 4)+'px;height:'+px(h)+'px;line-height:'+px(h)+'px;font-size:'+px(font)+'px">';
     if (tokens.length){
       // Chords go onto the hits in order. "/" keeps the chord going on a hit, and a "/" or "-"
       // may also stand for a rest; a chord never lands on a rest, it waits for the next hit.
@@ -2503,6 +2503,7 @@
       el.removeAttribute("id");
     });
     Array.prototype.forEach.call(pageEl.querySelectorAll(".chord-slot"), fitChordText);
+    fitRhythmChords(pageEl);
   }
 
   var readerResizeTimer = null;
@@ -2622,6 +2623,7 @@
     var grid = document.getElementById("pageGrid");
     grid.innerHTML = gridSvg(d, geom) + overlaysHtml(d, geom);
     Array.prototype.forEach.call(grid.querySelectorAll(".chord-slot"), fitChordText);
+    fitRhythmChords(grid);
     wireGrid();
     updateSelectionView();
     updateToolbar();
@@ -2635,6 +2637,32 @@
     if (i === null) return;
     var el = document.querySelector('#pageGrid .chord-slot[data-i="'+i+'"]');
     if (el){ pointerSelect = true; el.focus(); placeCaretAtEnd(el); }
+  }
+
+  // Chords over close hits (eighths apart) would overlap and their paper-coloured halos smudge
+  // into each other. A chord that would run into the one before moves right just past it; only
+  // when the row of chords is wider than the bar do they all get smaller, together.
+  function fitRhythmChords(root){
+    Array.prototype.forEach.call(root.querySelectorAll(".rh-chords"), function(box){
+      var spans = Array.prototype.slice.call(box.querySelectorAll("span"));
+      if (spans.length < 2) return;
+      var hits = spans.map(function(sp){ return sp.offsetLeft; });
+      var size = parseFloat(getComputedStyle(box).fontSize), gap = Math.max(3, size * 0.3);
+      function layout(){
+        var right = 0;
+        spans.forEach(function(sp, k){
+          var x = k ? Math.max(hits[k], right + gap) : hits[k];
+          sp.style.left = x + "px";
+          right = x + sp.offsetWidth;
+        });
+        return right;
+      }
+      while (layout() > box.clientWidth && size > 9){
+        size -= 0.5;
+        gap = Math.max(3, size * 0.3);
+        box.style.fontSize = size + "px";
+      }
+    });
   }
 
   // Long chord symbols shrink to fit their bar instead of spilling into the next one.
