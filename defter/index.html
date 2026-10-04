@@ -595,7 +595,7 @@
   .reader-btn:disabled{ opacity:.35; cursor:default; }
   .reader-btn:focus-visible{ outline:2px solid var(--brass); outline-offset:2px; }
   .reader-pos{ flex:1; text-align:center; font:600 13px "IBM Plex Mono",monospace; color:var(--text-lo); font-variant-numeric:tabular-nums; }
-  .reader-scroll{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; padding:8px 8px calc(6px + env(safe-area-inset-bottom)); }
+  .reader-scroll{ flex:1; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; padding:8px 8px calc(6px + env(safe-area-inset-bottom)); }
   .reader-head{ display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:0 12px; border-bottom:1.5px solid var(--ink); padding-bottom:4px; margin-bottom:2px; }
   .reader-name{ min-width:0; }
   .reader-title{ font:700 19px/1.2 "Fraunces",serif; }
@@ -1414,13 +1414,13 @@
 
   // On a phone a song opens in the reader and a setlist fills the screen; elsewhere both open beside the list.
   function openListItem(id){
-    if (!isPhone()){ selectItem(id); return; }
+    if (!usesReader()){ selectItem(id); return; }
     if (view === "songs"){
       openReader(id, artistSongs().map(function(s){ return s.id; }));
       return;
     }
     selectItem(id);
-    if (selectedId === id) setPhoneEdit(true);
+    if (selectedId === id && isPhone()) setPhoneEdit(true);
   }
 
   function addSong(){
@@ -1597,7 +1597,7 @@
     Array.prototype.forEach.call(host.querySelectorAll("[data-open]"), function(b){
       b.addEventListener("click", function(){
         var sid = b.getAttribute("data-open");
-        if (isPhone()) openReader(sid, normalizeSetlist(currentDoc).songIds);
+        if (usesReader()) openReader(sid, normalizeSetlist(currentDoc).songIds);
         else openSong(sid);
       });
     });
@@ -2412,8 +2412,12 @@
   var readerToken = 0;
   var wakeLock = null;
   var phoneQuery = window.matchMedia ? window.matchMedia("(max-width: 900px)") : null;
+  var touchQuery = window.matchMedia ? window.matchMedia("(pointer: coarse) and (hover: none)") : null;
 
+  // isPhone: the narrow layout, list and song taking turns. usesReader: also a tablet held
+  // sideways, which keeps the side-by-side layout but opens songs in the reader.
   function isPhone(){ return !!(phoneQuery && phoneQuery.matches); }
+  function usesReader(){ return isPhone() || !!(touchQuery && touchQuery.matches); }
 
   function openReader(id, ids){
     ids = ids.filter(function(x){ return !!songById(x); });
@@ -2459,10 +2463,11 @@
   }
 
   // The whole song should fit the screen and stay readable. Lines have a fixed height, so the
-  // page gets as wide as the screen's shape needs for all of them to fit; past READ_MAX_W
-  // (a long song, or a phone held sideways) the chords would get too small and the page scrolls.
+  // page gets as wide as the screen's shape needs for all of them to fit. When that would bring
+  // chords below READ_MIN_CHORD on screen (a long song, a phone held sideways) the page keeps
+  // READ_SCROLL_W instead, with large chords, and scrolls.
   var READ_METRICS = {band:36, metaBase:46, clefK:0.62, chordK:1.25, annK:1.2, padBottom:6};
-  var READ_MIN_W = 420, READ_MAX_W = 700;
+  var READ_MIN_W = 420, READ_SCROLL_W = 700, READ_MIN_CHORD = 14;
 
   function renderReader(){
     if (!reader || !reader.doc) return;
@@ -2480,7 +2485,7 @@
     var fit = document.getElementById("readerFit");
     var cs = getComputedStyle(scroll);
     var availW = scroll.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-    var availH = scroll.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - fit.offsetTop + scroll.querySelector(".reader-head").offsetTop;
+    var availH = scroll.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - fit.offsetTop + scroll.querySelector(".reader-head").offsetTop - 2;
     if (availW <= 0) return;
     var page = {h:0, padX:READ_PAD_X, fit:true};
     for (var k in READ_METRICS) page[k] = READ_METRICS[k];
@@ -2489,7 +2494,9 @@
     page.rowBase = page.band + STAFF_H + (stems ? 14 : 5);
     page.w = READ_MIN_W;
     var G = computeGeom(d, 4, page);
-    if (availH > 0) page.w = Math.max(READ_MIN_W, Math.min(READ_MAX_W, G.pageH * availW / availH));
+    var widest = availW * 21 * READ_METRICS.chordK / READ_MIN_CHORD;
+    var fitW = availH > 0 ? G.pageH * availW / availH : Infinity;
+    page.w = fitW <= widest ? Math.max(READ_MIN_W, fitW) : Math.min(READ_SCROLL_W, widest);
     page.w = Math.max(page.w, availW / READ_MAX_SCALE);
     G = computeGeom(d, 4, page);
     var scale = availW / G.pageW;
@@ -2561,7 +2568,7 @@
     var id = reader && reader.ids[reader.i];
     if (!id) return;
     if (view === "songs") selectItem(id); else openSong(id);
-    if (selectedId !== id){ closeReader(); return; }
+    if (selectedId !== id || !isPhone()){ closeReader(); return; }
     var editing = document.body.classList.contains("m-edit");
     // The reader's history entry becomes the editor's, so back returns to the list.
     closeReader(editing ? undefined : "keep");
@@ -2609,7 +2616,10 @@
     else document.body.classList.remove("m-edit");
   });
   if (phoneQuery){
-    var onPhoneChange = function(){ if (!isPhone()){ closeReader(); document.body.classList.remove("m-edit"); } };
+    var onPhoneChange = function(){
+      if (!usesReader()) closeReader();
+      if (!isPhone()) document.body.classList.remove("m-edit");
+    };
     if (phoneQuery.addEventListener) phoneQuery.addEventListener("change", onPhoneChange);
     else if (phoneQuery.addListener) phoneQuery.addListener(onPhoneChange);
   }
