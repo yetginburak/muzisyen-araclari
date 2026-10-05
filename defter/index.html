@@ -2279,9 +2279,11 @@
           if (bars[j].label || bars[j].note || bars[j].startMark) break;
           span++;
         }
-        texts += '<div class="ann ann-left" style="left:'+px(box.x + 3 * s)+'px;top:'+px(box.top + 1)+'px;max-width:'+px(span * box.mW - 6 * s)+'px;height:'+px(annRow)+'px;font-size:'+px(annFont)+'px">'+left+'</div>';
+        // On a line's first bar the name starts at the left edge, over the clef.
+        var annX = G.rows[box.row].start === i ? G.padX + 1 : box.x + 3 * s;
+        texts += '<div class="ann ann-left" style="left:'+px(annX)+'px;top:'+px(box.top + 1)+'px;max-width:'+px(box.x + span * box.mW - 3 * s - annX)+'px;height:'+px(annRow)+'px;font-size:'+px(annFont)+'px">'+left+'</div>';
         var est = (b.startMark ? 1.4 : 0) + (b.label ? b.label.length * 0.72 + 1.4 : 0) + (b.note ? b.note.length * 0.46 + 0.6 : 0);
-        annReach = Math.min(box.x + 3 * s + est * annFont, box.x + span * box.mW);
+        annReach = Math.min(annX + est * annFont, box.x + span * box.mW);
         annReachRow = box.row;
       }
       if (right){
@@ -2428,12 +2430,14 @@
     fitPage();
   }
 
+  var gridStale = false;
   function fitPage(){
     var fit = document.getElementById("pageFit"), paper = document.getElementById("sheetPaper");
     if (!fit || !paper) return;
     var room = fit.parentElement.clientWidth;
     // A hidden or not yet laid out view has no width; the sheet is fitted again once it has one.
     if (room <= 0) return;
+    if (gridStale && view === "songs"){ gridStale = false; renderGrid(); }
     var scale = Math.min(1, room / PAGE_W);
     paper.style.transform = scale < 1 ? "scale(" + scale.toFixed(4) + ")" : "";
     fit.style.width = (PAGE_W * scale) + "px";
@@ -2505,8 +2509,8 @@
   // page gets as wide as the screen's shape needs for all of them to fit. When that would bring
   // chords below READ_MIN_CHORD on screen (a long song, a phone held sideways) the page keeps
   // READ_SCROLL_W instead, with large chords, and scrolls.
-  var READ_METRICS = {band:36, metaBase:46, clefK:0.62, chordK:1.25, annK:1.2, padBottom:6};
-  var READ_MIN_W = 420, READ_SCROLL_W = 700, READ_MIN_CHORD = 14;
+  var READ_METRICS = {band:32, metaBase:46, clefK:0.62, chordK:1.25, annK:1.2, padBottom:6};
+  var READ_MIN_W = 420, READ_SCROLL_W = 700, READ_MIN_CHORD = 12;
 
   function renderReader(){
     if (!reader || !reader.doc) return;
@@ -2667,6 +2671,9 @@
     var d = currentDoc;
     var head = document.getElementById("pageHead");
     if (!d || !head) return;
+    // A sheet drawn while hidden (on a phone, behind the list) has no header height yet;
+    // fitPage draws it again once it is shown.
+    gridStale = !head.offsetHeight;
     geom = computeGeom(d, PAD_TOP + head.offsetHeight + HEADER_GAP);
     if (selA !== null && Math.max(selA, selB) >= d.bars.length) resetBarSelection();
     var grid = document.getElementById("pageGrid");
