@@ -1605,7 +1605,6 @@
       html += '<li class="sl-archive-empty">'+(archive.length && allAdded ? "Arşivdeki bütün şarkılar bu setlistte." : (archive.length ? "Aramaya uyan şarkı yok." : "Bu projenin arşivinde henüz şarkı yok."))+'</li>';
     }
     html += '</ul></div>';
-    html += '<div class="foot-note">Şarkıları soldaki tutamaçtan sürükleyerek sıralayın (ya da tutamaca tıklayıp ↑ ↓). Şarkı adına tıklayınca nota sayfası açılır.</div>';
     html += '</div>';
 
     host.innerHTML = html;
@@ -2423,8 +2422,7 @@
         '<div class="page-head" id="pageHead">'+headerHtml(d)+'</div>'+
         '<div class="page-grid" id="pageGrid"></div>'+
         '<button type="button" class="simile-btn" hidden aria-label="Önceki ölçüyü tekrarla" title="Önceki ölçüyü tekrarla">'+SIMILE_ICON+'</button>'+
-      '</div></div>'+
-      '<p class="page-help">Bir ölçüye tıklayın, Shift ile tıklayarak aralık seçin; bölüm adı, not, tekrar, volta ve yönlendirmeleri üstteki menüden ekleyin. Akoru ölçünün içine yazın. Boş ölçüde altında çıkan ikon ya da % önceki ölçüyü tekrarlar, - yazmak ölçüyü sus yapar. Menüdeki + Ölçü seçimin arkasına ölçü ekler, − Ölçü seçili ölçüleri siler, ↑ / ↓ satır seçili satırın üstüne ya da altına boş satır açar; diğer satırlar yerinde kalır. Senkop ya da hits için ölçüyü seçip menüdeki Ritim düğmesine basın. Ritimli ölçüde akorlar vuruşlara sırayla yerleşir; akoru bir sonraki vuruşa sürdürmek için / yazın, örneğin Eb7 / / / Ebm7; bir akor susa denk gelmez, sonraki vuruşa geçer. Önceki ölçüden devam eden nota için ritim panelinde Önceki ölçüden bağla düğmesine basın. Ara bir ölçüde ölçü sayısı değişiyorsa (örneğin tek bir 2/4 ölçü) ölçüyü seçip menüden Ölçü sayısı seçin; sonraki ölçü eskisine döner. Seçili ölçüleri Ctrl+C ile kopyalayıp başka bir ölçüyü seçerek Ctrl+V ile yapıştırın. Ctrl+Z ya da ↶ son değişikliği geri alır, Ctrl+Y ya da ↷ yineler.</p>';
+      '</div></div>';
     wireHeader();
     renderGrid();
     fitPage();
