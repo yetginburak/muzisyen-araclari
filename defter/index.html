@@ -2189,7 +2189,7 @@
         shown = text;
         html += wholeNote
           ? '<span style="left:'+px(rb.x0 + rb.w / 2 - barX)+'px;transform:translateX(-50%)">'+escapeHtml(text)+'</span>'
-          : '<span style="left:'+px(rb.x0 + slot.at * cw - barX)+'px">'+escapeHtml(text)+'</span>';
+          : '<span'+(k > 0 && !slots[k - 1].hit ? ' data-after-rest="1"' : '')+' style="left:'+px(rb.x0 + slot.at * cw - barX)+'px">'+escapeHtml(text)+'</span>';
       }
     }
     return html + '</div>';
@@ -2260,7 +2260,7 @@
     var annRow = annRowFor(s, G.band, G.annK);
     var rhCells = barCells(d);
     // How far along its line the last section name or note reaches, so the bars under it are known.
-    var annReach = -1, annReachRow = -1;
+    var annReach = -1, annReachRow = -1, annReachFromStart = false;
     bars.forEach(function(b, i){
       var box = barBox(G, i);
       cells += '<div class="bar-cell" data-i="'+i+'" style="left:'+px(box.x)+'px;top:'+px(box.top)+'px;width:'+px(box.mW)+'px;height:'+px(G.rowBase * s)+'px"></div>';
@@ -2280,11 +2280,13 @@
           span++;
         }
         // On a line's first bar the name starts at the left edge, over the clef.
-        var annX = G.rows[box.row].start === i ? G.padX + 1 : box.x + 3 * s;
-        texts += '<div class="ann ann-left" style="left:'+px(annX)+'px;top:'+px(box.top + 1)+'px;max-width:'+px(box.x + span * box.mW - 3 * s - annX)+'px;height:'+px(annRow)+'px;font-size:'+px(annFont)+'px">'+left+'</div>';
+        var lineStart = G.rows[box.row].start === i;
+        var annX = lineStart ? G.padX + 1 : box.x + 3 * s;
+        texts += '<div class="ann ann-left"'+(lineStart ? ' data-ann-row="'+box.row+'"' : '')+' style="left:'+px(annX)+'px;top:'+px(box.top + 1)+'px;max-width:'+px(box.x + span * box.mW - 3 * s - annX)+'px;height:'+px(annRow)+'px;font-size:'+px(annFont)+'px">'+left+'</div>';
         var est = (b.startMark ? 1.4 : 0) + (b.label ? b.label.length * 0.72 + 1.4 : 0) + (b.note ? b.note.length * 0.46 + 0.6 : 0);
         annReach = Math.min(annX + est * annFont, box.x + span * box.mW);
         annReachRow = box.row;
+        annReachFromStart = lineStart;
       }
       if (right){
         texts += '<div class="ann ann-right" style="right:'+px(G.pageW - box.right + 3 * s)+'px;top:'+px(box.top + 1)+'px;height:'+px(annRow)+'px;font-size:'+px(annFont)+'px">'+right+'</div>';
@@ -2294,13 +2296,18 @@
         // With a rhythm written, the chords move above the staff and sit over their hits, as large as
         // the other chords. Under a section name, note, mark or ending they keep below that row and may
         // reach into the top space of the staff, which the slash notes on the middle line leave free.
-        var under = !!left || !!right || !!b.ending || (annReachRow === box.row && box.x < annReach);
+        // A name that starts the line sits mostly over the clef: the chords stay full size beside it,
+        // moved right past its end (fitRhythmChords measures it) instead of shrinking under it.
+        var underAnn = annReachRow === box.row && box.x < annReach;
+        var afterAnn = underAnn && annReachFromStart && !right && !b.ending;
+        var under = !afterAnn && (!!left || !!right || !!b.ending || underAnn);
         var base = box.staffTop + (under ? 3 * s : -1);
         var room = base - (under ? box.top + annRow + 1 : box.top + 2);
         var rf = Math.min(chordFont, room / 1.12), rhH = rf * 1.12, rtop = base - rhH;
         texts += '<div class="chord-slot rhythmic" contenteditable="true" data-i="'+i+'" data-base="'+px(rf)+'" aria-label="'+(i + 1)+'. ölçü akoru" '+
           'style="left:'+px(box.x)+'px;top:'+px(rtop)+'px;width:'+px(box.mW)+'px;height:'+px(rhH)+'px;line-height:'+px(rhH)+'px;font-size:'+px(rf)+'px">'+escapeHtml(b.chord)+'</div>';
-        texts += rhythmChordsHtml(b.chord, rh, rhythmBox(b, box.x, box.right, s, showsMeter(d, i)), box.x, rtop, rhH, rf, b.tieIn);
+        var rhc = rhythmChordsHtml(b.chord, rh, rhythmBox(b, box.x, box.right, s, showsMeter(d, i)), box.x, rtop, rhH, rf, b.tieIn);
+        texts += afterAnn ? rhc.replace('<div class="rh-chords"', '<div class="rh-chords" data-after-ann="'+box.row+'"') : rhc;
       } else {
         texts += '<div class="chord-slot'+(isRepeatMeasure(b.chord) || isRestMeasure(b.chord) ? " is-repeat" : "")+'" contenteditable="true" data-i="'+i+'" data-base="'+px(chordFont)+'" aria-label="'+(i + 1)+'. ölçü akoru" '+
           'style="left:'+px(box.x)+'px;top:'+px(box.staffTop - 2 * s)+'px;width:'+px(box.mW)+'px;height:'+px(40 * s)+'px;line-height:'+px(40 * s)+'px;font-size:'+px(chordFont)+'px">'+escapeHtml(b.chord)+'</div>';
@@ -2696,24 +2703,32 @@
   }
 
   // Chords over close hits (eighths apart) would overlap and their paper-coloured halos smudge
-  // into each other. A chord that would run into the one before moves right just past it; only
-  // when the row of chords is wider than the bar do they all get smaller, together.
+  // into each other. A chord that would run into the one before moves right just past it, but a
+  // group of chords coming after a rest stays over its hits, so separate groups stay apart. When
+  // that does not fit, the bar's chords get smaller together.
   function fitRhythmChords(root){
     Array.prototype.forEach.call(root.querySelectorAll(".rh-chords"), function(box){
       var spans = Array.prototype.slice.call(box.querySelectorAll("span"));
-      if (spans.length < 2) return;
-      var hits = spans.map(function(sp){ return sp.offsetLeft; });
+      var row = box.getAttribute("data-after-ann");
+      var ann = row !== null ? root.querySelector('.ann[data-ann-row="'+row+'"]') : null;
+      if (!spans.length || (spans.length < 2 && !ann)) return;
       var size = parseFloat(getComputedStyle(box).fontSize), gap = Math.max(3, size * 0.3);
+      var minX = ann ? ann.offsetLeft + ann.offsetWidth + gap - box.offsetLeft : -Infinity;
+      var hits = spans.map(function(sp){ return Math.max(sp.offsetLeft, minX); });
+      var drift = false;
       function layout(){
         var right = 0;
+        drift = false;
         spans.forEach(function(sp, k){
           var x = k ? Math.max(hits[k], right + gap) : hits[k];
+          // A lone last chord may still slip right; a group of chords after a rest may not.
+          if (x > hits[k] + 1 && sp.hasAttribute("data-after-rest") && k < spans.length - 1) drift = true;
           sp.style.left = x + "px";
           right = x + sp.offsetWidth;
         });
         return right;
       }
-      while (layout() > box.clientWidth && size > 9){
+      while ((layout() > box.clientWidth || drift) && size > 9){
         size -= 0.5;
         gap = Math.max(3, size * 0.3);
         box.style.fontSize = size + "px";

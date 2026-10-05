@@ -1,6 +1,6 @@
 // Repertuar Defteri offline support. Pages come from the network first so a new upload
 // shows up; without a connection the last copy is used. Fonts are kept once fetched.
-var CACHE = "repertuar-4443681861";
+var CACHE = "repertuar-842d64fb4c";
 var CORE = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png"];
 
 self.addEventListener("install", function(e){
