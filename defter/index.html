@@ -3719,18 +3719,26 @@
     return getDownloads().then(function(downloads){
       if (downloads) return downloads.save({filename: filename, data: blob});
       // On a phone the file goes to the share sheet (WhatsApp, e-mail…); elsewhere it downloads.
+      function download(){
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+      }
       try {
         var file = new File([blob], filename, {type: type});
         if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) && navigator.canShare && navigator.canShare({files: [file]})){
-          return navigator.share({files: [file], title: filename});
+          // The share sheet may refuse a file type (MusicXML on Android) or the moment has passed;
+          // the file then downloads instead. Closing the sheet on purpose stays a cancel.
+          return navigator.share({files: [file], title: filename}).catch(function(err){
+            if (err && err.name === "AbortError") throw err;
+            download();
+          });
         }
       } catch(err){}
-      var a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+      download();
     });
   }
   function reportSave(p, done){
