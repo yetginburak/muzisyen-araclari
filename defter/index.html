@@ -813,7 +813,7 @@
         <button class="btn-ghost" id="importBtn" type="button" title="Paylaşılan şarkı, setlist ya da yedek dosyasını ekle">Dosyadan ekle</button>
         <button class="btn-ghost" id="backupBtn" type="button" title="Bütün sanatçı, şarkı ve setlistleri tek dosyaya kaydet">Tümünü yedekle</button>
       </div>
-      <input type="file" id="importFile" accept=".json,application/json" hidden>
+      <input type="file" id="importFile" accept=".json,application/json,.musicxml,.mxl,.xml,application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml" hidden>
     </div>
   </aside>
 
@@ -846,6 +846,7 @@
           <button class="btn" id="redoBtn" type="button" disabled aria-label="Yinele" title="Yinele (Ctrl+Y)">↷</button>
           <button class="btn danger" id="deleteItemBtn" type="button" title="Açık şarkıyı sil">Sil</button>
           <button class="btn" id="exportBtn" type="button" title="Açık şarkıyı ya da setlisti dosya olarak paylaş">Paylaş</button>
+          <button class="btn" id="musicXmlBtn" type="button" title="Açık şarkıyı MuseScore gibi nota programlarında açılan MusicXML dosyası olarak ver">MusicXML</button>
           <button class="btn" id="printBtn" type="button">Yazdır / PDF</button>
           <button class="btn primary" id="saveBtn" type="button" disabled>Kaydet</button>
         </div>
@@ -1568,6 +1569,7 @@
     var del = document.getElementById("deleteItemBtn");
     del.title = view === "songs" ? "Açık şarkıyı sil" : "Açık setlisti sil";
     document.getElementById("songTools").hidden = view !== "songs";
+    document.getElementById("musicXmlBtn").hidden = view !== "songs";
     document.getElementById("marksBar").hidden = view !== "songs";
     updatePhoneTitle();
     if (!currentDoc){ showEmpty(emptyMessage()); return; }
@@ -3264,6 +3266,431 @@
   }
   document.getElementById("printBtn").addEventListener("click", exportPdf);
 
+  // ---- MusicXML ----
+  // MusicXML is the file format notation programs (MuseScore, Sibelius, Finale, Guitar Pro) share.
+  // A song comes in as what this notebook shows: title, artist, key, tempo, meter, bars with their
+  // chord symbols, section names, repeats, endings, segno/coda marks and line breaks; the notes
+  // themselves stay out. It goes out as a one-staff chord chart: chord symbols over slash notes
+  // (or the written rhythm), with the same marks and line breaks.
+  var MX_MAJOR = {"-7":"Cb","-6":"Gb","-5":"Db","-4":"Ab","-3":"Eb","-2":"Bb","-1":"F","0":"C","1":"G","2":"D","3":"A","4":"E","5":"B","6":"F#","7":"C#"};
+  var MX_MINOR = {"-7":"Abm","-6":"Ebm","-5":"Bbm","-4":"Fm","-3":"Cm","-2":"Gm","-1":"Dm","0":"Am","1":"Em","2":"Bm","3":"F#m","4":"C#m","5":"G#m","6":"D#m","7":"A#m"};
+  // Chord kinds, with the way this notebook writes each one.
+  var MX_KINDS = [
+    ["major",""], ["minor","m"], ["augmented","aug"], ["diminished","dim"], ["dominant","7"],
+    ["major-seventh","maj7"], ["minor-seventh","m7"], ["diminished-seventh","dim7"], ["augmented-seventh","aug7"],
+    ["half-diminished","m7b5"], ["major-minor","m(maj7)"], ["major-sixth","6"], ["minor-sixth","m6"],
+    ["dominant-ninth","9"], ["major-ninth","maj9"], ["minor-ninth","m9"], ["dominant-11th","11"],
+    ["major-11th","maj11"], ["minor-11th","m11"], ["dominant-13th","13"], ["major-13th","maj13"],
+    ["minor-13th","m13"], ["suspended-second","sus2"], ["suspended-fourth","sus4"], ["power","5"]
+  ];
+  var MX_SUFFIX_KIND = {"min":"minor", "-":"minor", "+":"augmented", "°":"diminished", "M7":"major-seventh",
+    "ma7":"major-seventh", "Δ":"major-seventh", "Δ7":"major-seventh", "ø":"half-diminished", "ø7":"half-diminished",
+    "-7":"minor-seventh", "min7":"minor-seventh", "sus":"suspended-fourth", "+7":"augmented-seventh"};
+  MX_KINDS.forEach(function(k){ MX_SUFFIX_KIND[k[1]] = k[0]; });
+  var MX_END_SOUND = {"Fine":' fine="yes"', "To Coda":' tocoda="coda"', "D.C.":' dacapo="yes"', "D.S.":' dalsegno="segno"',
+    "D.C. al Fine":' dacapo="yes"', "D.S. al Fine":' dalsegno="segno"', "D.C. al Coda":' dacapo="yes"', "D.S. al Coda":' dalsegno="segno"'};
+
+  function mxEsc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&apos;"}[c]; }); }
+  function mxKids(el, name){ return Array.prototype.filter.call(el ? el.children : [], function(c){ return c.localName === name; }); }
+  function mxKid(el, name){ return mxKids(el, name)[0] || null; }
+  function mxText(el, path){
+    var cur = el;
+    path.split("/").forEach(function(n){ cur = cur ? mxKid(cur, n) : null; });
+    return cur ? cur.textContent.trim() : "";
+  }
+  function mxAlter(v){ v = Math.round(parseFloat(v) || 0); return v < 0 ? new Array(-v + 1).join("b") : new Array(v + 1).join("#"); }
+
+  // One <harmony> as the chord symbol this notebook shows, e.g. "Bbm7", "D/F#", "N.C.".
+  function mxChordName(h){
+    var kind = mxKid(h, "kind");
+    var kindName = kind ? kind.textContent.trim() : "major";
+    if (kindName === "none") return "N.C.";
+    var root = mxKid(h, "root");
+    var name = root ? mxText(root, "root-step") + mxAlter(mxText(root, "root-alter")) : "";
+    if (!name) return "";
+    var shown = kind && kind.hasAttribute("text") ? kind.getAttribute("text") : null;
+    if (shown !== null) name += shown;
+    else {
+      var known = MX_KINDS.filter(function(k){ return k[0] === kindName; })[0];
+      name += known ? known[1] : "";
+      mxKids(h, "degree").forEach(function(dg){
+        var type = mxText(dg, "degree-type"), val = mxText(dg, "degree-value"), alt = mxAlter(mxText(dg, "degree-alter"));
+        name += type === "add" ? "add" + alt + val : type === "subtract" ? "no" + val : alt + val;
+      });
+    }
+    var bass = mxKid(h, "bass");
+    if (bass) name += "/" + mxText(bass, "bass-step") + mxAlter(mxText(bass, "bass-alter"));
+    return name;
+  }
+
+  // A bar written in slash notes (as rhythm charts and this notebook's own MusicXML are) gives its
+  // rhythm back as sixteenth cells; a bar of plain quarter slashes or of real notes gives none.
+  function mxSlashRhythm(notes, divisions, meter){
+    var cells = cellsForMeter(meter || "4/4");
+    if (!cells || !notes.length) return null;
+    var pitched = notes.filter(function(nt){ return !mxKid(nt, "rest"); });
+    if (!pitched.length || !pitched.every(function(nt){ return mxText(nt, "notehead") === "slash"; })) return null;
+    var cell = divisions / 4, out = "", hits = [], tieIn = false, pos = 0;
+    var tiedFrom = function(nt){ return mxKids(nt, "tie").some(function(t){ return t.getAttribute("type") === "stop"; }); };
+    var plain = notes.every(function(nt){ return !mxKid(nt, "rest") && !tiedFrom(nt) && parseFloat(mxText(nt, "duration")) === divisions && !mxKids(nt, "tie").length; });
+    if (plain) return null;
+    notes.forEach(function(nt, k){
+      var len = Math.max(1, Math.round((parseFloat(mxText(nt, "duration")) || 0) / cell));
+      if (pos + len > cells) len = cells - pos;
+      if (len <= 0) return;
+      // Rests in a row are one silence, as the editor writes it.
+      if (mxKid(nt, "rest")) out += (k > 0 && mxKid(notes[k - 1], "rest") ? "." : "-") + new Array(len).join(".");
+      else if (tiedFrom(nt)){ if (k === 0) tieIn = true; out += new Array(len + 1).join("."); }
+      else { out += "x" + new Array(len).join("."); hits.push(k); }
+      pos += len;
+    });
+    while (out.length < cells) out += ".";
+    out = out.slice(0, cells);
+    return {cells: /^\.*$/.test(out) ? "" : out, hits: hits, tieIn: tieIn};
+  }
+
+  function mxEndingLabel(number){
+    var label = String(number || "").split(/[,\s]+/).filter(Boolean).map(function(n){ return n + "."; }).join("");
+    return ENDINGS.indexOf(label) >= 0 ? label : "";
+  }
+
+  function parseMusicXml(text, fileName){
+    var xml = new DOMParser().parseFromString(text, "application/xml");
+    var root = xml.documentElement;
+    if (!root || root.getElementsByTagName("parsererror").length || root.localName === "parsererror") throw new Error("Dosya okunamadı (XML hatalı).");
+    if (root.localName === "score-timewise") throw new Error("Bu MusicXML zamana göre (timewise) yazılmış; MuseScore'da açıp yeniden MusicXML olarak kaydedin.");
+    if (root.localName !== "score-partwise") throw new Error("Bu dosya bir MusicXML notası değil.");
+    var parts = mxKids(root, "part");
+    if (!parts.length) throw new Error("Dosyada hiç partisyon yok.");
+    // The part with the chord symbols carries the chart; without any, the first part gives the bars.
+    var part = parts.slice().sort(function(a, b){ return b.getElementsByTagName("harmony").length - a.getElementsByTagName("harmony").length; })[0];
+    var title = mxText(root, "work/work-title") || mxText(root, "movement-title");
+    if (!title){
+      var credit = Array.prototype.filter.call(root.getElementsByTagName("credit"), function(c){ return mxText(c, "credit-type") === "title"; })[0];
+      title = credit ? mxText(credit, "credit-words") : "";
+    }
+    if (!title) title = String(fileName || "").replace(/\.(musicxml|mxl|xml)$/i, "") || "İsimsiz şarkı";
+    var ident = mxKid(root, "identification"), artist = "";
+    ["composer", "artist", "lyricist", ""].some(function(t){
+      var c = mxKids(ident, "creator").filter(function(x){ return !t || x.getAttribute("type") === t; })[0];
+      if (c) artist = c.textContent.trim();
+      return !!artist;
+    });
+
+    var bars = [], rows = [], key = "", tempo = "", songMeter = "", meter = "", lastChords = [], anyChord = false, openEnding = "", repeating = false, divisions = 1;
+    var firstHarmony = null;
+    mxKids(part, "measure").forEach(function(m, mi){
+      var b = blankBar(), chords = [], notes = [], chordAt = [], backedUp = false;
+      Array.prototype.forEach.call(m.children, function(el){
+        var n = el.localName;
+        if (n === "print" && el.getAttribute("new-system") === "yes" && mi > 0) rows.push(bars.length);
+        else if (n === "attributes"){
+          if (mxText(el, "divisions")) divisions = parseFloat(mxText(el, "divisions")) || divisions;
+          var fifths = mxText(el, "key/fifths");
+          if (fifths && !key){
+            var minor = mxText(el, "key/mode") === "minor";
+            key = (minor ? MX_MINOR : MX_MAJOR)[String(parseInt(fifths, 10))] || "";
+          }
+          mxKids(el, "measure-style").forEach(function(ms){
+            var mr = mxKid(ms, "measure-repeat");
+            if (mr) repeating = mr.getAttribute("type") === "start";
+          });
+          var beats = mxText(el, "time/beats"), type = mxText(el, "time/beat-type");
+          if (beats && type){
+            var ts = beats + "/" + type;
+            if (!songMeter) songMeter = ts;
+            else if (ts !== meter && METERS.indexOf(ts) > 0) b.timeSig = ts;
+            meter = ts;
+          }
+        }
+        else if (n === "harmony"){
+          var c = mxChordName(el);
+          if (c){ chords.push(c); chordAt.push(notes.length); anyChord = true; }
+          if (!firstHarmony) firstHarmony = el;
+        }
+        else if (n === "barline"){
+          var rep = mxKid(el, "repeat"), end = mxKid(el, "ending");
+          if (rep && rep.getAttribute("direction") === "forward") b.repeatStart = true;
+          if (rep && rep.getAttribute("direction") === "backward"){
+            b.repeatEnd = true;
+            var times = parseInt(rep.getAttribute("times"), 10);
+            if (times > 2) b.repeatTimes = Math.min(8, times);
+          }
+          if (end && end.getAttribute("type") === "start") openEnding = mxEndingLabel(end.getAttribute("number"));
+          if (end && openEnding) b.ending = openEnding;
+          if (end && end.getAttribute("type") !== "start") openEnding = "";
+        }
+        else if (n === "direction"){
+          Array.prototype.forEach.call(el.getElementsByTagName("*"), function(d){
+            var w = d.textContent.trim();
+            if (d.localName === "rehearsal" && w && !b.label) b.label = w.slice(0, 24);
+            else if (d.localName === "segno") b.startMark = "segno";
+            else if (d.localName === "coda") b.startMark = b.startMark || "coda";
+            else if (d.localName === "words" && w){
+              var mark = END_MARKS.filter(function(x){ return x && x.toLowerCase() === w.toLowerCase().replace(/\s+/g, " "); })[0];
+              if (mark) b.endMark = mark;
+              else if (!/^\d+\.?$/.test(w)) b.note = (b.note ? b.note + " " : "") + w;
+            }
+            else if (d.localName === "per-minute" && !tempo) tempo = String(Math.round(parseFloat(w) || 0) || "");
+          });
+          var snd = mxKid(el, "sound");
+          if (snd && snd.getAttribute("tempo") && !tempo) tempo = String(Math.round(parseFloat(snd.getAttribute("tempo"))));
+        }
+        else if (n === "sound" && el.getAttribute("tempo") && !tempo) tempo = String(Math.round(parseFloat(el.getAttribute("tempo"))));
+        else if (n === "backup") backedUp = true;
+        else if (n === "note" && !backedUp && !mxKid(el, "chord") && !mxKid(el, "grace")) notes.push(el);
+      });
+      b.note = b.note.slice(0, 60);
+      var rhythm = mxSlashRhythm(notes, divisions, meter || songMeter);
+      if (rhythm){
+        b.rhythm = rhythm.cells;
+        b.tieIn = rhythm.tieIn;
+        // Chords sit on their hits; "/" carries the chord over a hit that brings no new one.
+        if (chords.length){
+          var tokens = [];
+          rhythm.hits.forEach(function(noteIdx){
+            var here = chords.filter(function(c, k){ return chordAt[k] === noteIdx; });
+            tokens = tokens.concat(here.length ? here : ["/"]);
+          });
+          chords.forEach(function(c, k){ if (rhythm.hits.indexOf(chordAt[k]) < 0) tokens.unshift(c); });
+          while (tokens.length && tokens[tokens.length - 1] === "/") tokens.pop();
+          chords = tokens;
+        }
+      }
+      var silent = notes.length > 0 && notes.every(function(nt){ return !!mxKid(nt, "rest"); });
+      var prevChord = bars.length ? bars[bars.length - 1].chord : "";
+      // A bar the score marks as a repeat of the one before.
+      if (repeating && !chords.length && bars.length) b.chord = "%";
+      // N.C. over a bar of rests, or rests going on after one, is a bar of silence.
+      else if (silent && (chords.join(" ") === "N.C." || (!chords.length && (isRestMeasure(prevChord) || lastChords.join(" ") === "N.C.")))){ b.chord = "-"; lastChords = ["N.C."]; }
+      else if (chords.length){ b.chord = chords.join(" "); lastChords = chords.filter(function(c){ return c !== "/"; }); }
+      // No new chord in a bar: the last one goes on, written as a one-bar repeat after a bar
+      // holding just that chord.
+      else if (lastChords.length && (prevChord === "%" || prevChord === lastChords.join(" ")) && lastChords.length === 1) b.chord = "%";
+      else if (lastChords.length){ lastChords = lastChords.slice(-1); b.chord = lastChords[0]; }
+      if (openEnding) b.ending = openEnding;
+      bars.push(b);
+    });
+    if (!bars.length) throw new Error("Dosyada ölçü yok.");
+    syncRepeatTimes(bars);
+    // A minor key the score did not mark: the first chord names the relative minor.
+    if (firstHarmony && key && !/m$/.test(key)){
+      var first = mxChordName(firstHarmony), majorIdx = null;
+      Object.keys(MX_MAJOR).forEach(function(f){ if (MX_MAJOR[f] === key) majorIdx = f; });
+      if (majorIdx !== null && first === MX_MINOR[majorIdx]) key = first;
+    }
+
+    // Line breaks in the score become the lines of the page, when no line holds more than 8 bars.
+    var layout = {lines: Math.min(30, Math.ceil(bars.length / DEFAULT_PER_LINE)), perLine: DEFAULT_PER_LINE, rowCounts: []};
+    if (rows.length){
+      var starts = [0].concat(rows), counts = starts.map(function(s, k){ return (starts[k + 1] || bars.length) - s; }).filter(function(c){ return c > 0; });
+      if (counts.every(function(c){ return c <= 8; })){
+        var freq = {}, per = DEFAULT_PER_LINE, best = 0;
+        counts.forEach(function(c){ freq[c] = (freq[c] || 0) + 1; if (freq[c] > best){ best = freq[c]; per = c; } });
+        layout = {lines: Math.min(30, counts.length), perLine: per, rowCounts: tidyRowCounts(counts, per)};
+      }
+    }
+    return {title: title, artist: artist, key: key, tempo: tempo, timeSig: songMeter || "4/4", layout: layout, bars: bars, hasChords: anyChord};
+  }
+
+  // ---- .mxl: a zip holding the MusicXML file ----
+  function mxlToText(buffer){
+    var bytes = new Uint8Array(buffer), view = new DataView(buffer);
+    var eocd = -1;
+    for (var i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i--){
+      if (view.getUint32(i, true) === 0x06054b50){ eocd = i; break; }
+    }
+    if (eocd < 0) return Promise.reject(new Error("Sıkıştırılmış MusicXML (.mxl) açılamadı."));
+    var count = view.getUint16(eocd + 10, true), p = view.getUint32(eocd + 16, true), entries = {};
+    var dec = new TextDecoder("utf-8");
+    for (var k = 0; k < count && view.getUint32(p, true) === 0x02014b50; k++){
+      var method = view.getUint16(p + 10, true), size = view.getUint32(p + 20, true);
+      var nameLen = view.getUint16(p + 28, true), extraLen = view.getUint16(p + 30, true), commentLen = view.getUint16(p + 32, true);
+      var local = view.getUint32(p + 42, true), name = dec.decode(bytes.subarray(p + 46, p + 46 + nameLen));
+      entries[name] = {method: method, size: size, local: local};
+      p += 46 + nameLen + extraLen + commentLen;
+    }
+    function read(name){
+      var e = entries[name];
+      var start = e.local + 30 + view.getUint16(e.local + 26, true) + view.getUint16(e.local + 28, true);
+      var data = bytes.subarray(start, start + e.size);
+      if (e.method === 0) return Promise.resolve(dec.decode(data));
+      if (e.method !== 8 || typeof DecompressionStream === "undefined") return Promise.reject(new Error("Bu tarayıcı .mxl dosyasını açamıyor; MuseScore'dan sıkıştırılmamış MusicXML (.musicxml) olarak kaydedin."));
+      return new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).text();
+    }
+    var names = Object.keys(entries);
+    var pick = function(){
+      var other = names.filter(function(n){ return /\.(musicxml|xml)$/i.test(n) && n.indexOf("META-INF") !== 0; })[0];
+      return other ? read(other) : Promise.reject(new Error(".mxl içinde MusicXML bulunamadı."));
+    };
+    if (!entries["META-INF/container.xml"]) return pick();
+    return read("META-INF/container.xml").then(function(c){
+      var m = /full-path="([^"]+)"/.exec(c);
+      return m && entries[m[1]] ? read(m[1]) : pick();
+    });
+  }
+
+  function importMusicXml(text, fileName){
+    if (!currentArtistId){ alertStatus("Önce bir sanatçı ya da proje seçin."); return; }
+    var song;
+    try { song = parseMusicXml(text, fileName); } catch(err){ alertStatus(err.message || "MusicXML okunamadı."); return; }
+    var hasChords = song.hasChords;
+    delete song.hasChords;
+    var policy = "new";
+    if (duplicateCount([song], currentArtistId)){
+      policy = confirm("“" + song.title + "” " + ((currentArtist() || {}).name || "") + " listesinde zaten var.\n\nTamam: mevcut şarkının yerine yaz\nİptal: ayrı bir kopya olarak ekle") ? "replace" : "copy";
+    }
+    return importSongs([song], currentArtistId, policy).then(function(ids){
+      switchView("songs");
+      selectItem(ids[0], true);
+      setStatus("Eklendi: " + song.title + " (" + song.bars.length + " ölçü" + (hasChords ? "" : ", dosyada akor yok") + ")", hasChords ? "" : "error");
+    });
+  }
+
+  // ---- export ----
+  function mxKeyFifths(key){
+    var k = String(key || "").trim().replace("♭", "b").replace("♯", "#"), out = null;
+    [[MX_MAJOR, "major"], [MX_MINOR, "minor"]].some(function(t){
+      Object.keys(t[0]).some(function(f){ if (t[0][f] === k){ out = {fifths: f, mode: t[1]}; return true; } });
+      return !!out;
+    });
+    return out;
+  }
+
+  function mxHarmonyXml(token){
+    if (/^N\.?C\.?$/i.test(token)) return '<harmony print-frame="no"><root><root-step>C</root-step></root><kind text="N.C.">none</kind></harmony>';
+    var m = /^([A-G])([#b♯♭]*)(.*?)(?:\/([A-G])([#b♯♭]*))?$/.exec(token);
+    if (!m) return "";
+    function alter(s){ var n = (s.match(/[#♯]/g) || []).length - (s.match(/[b♭]/g) || []).length; return n ? "<root-alter>" + n + "</root-alter>" : ""; }
+    var suffix = m[3], kind = MX_SUFFIX_KIND[suffix] || "other";
+    var xml = '<harmony print-frame="no"><root><root-step>' + m[1] + "</root-step>" + alter(m[2]) + "</root>" +
+      '<kind text="' + mxEsc(suffix) + '">' + kind + "</kind>";
+    if (m[4]) xml += "<bass><bass-step>" + m[4] + "</bass-step>" + alter(m[5]).replace(/root-alter/g, "bass-alter") + "</bass>";
+    return xml + "</harmony>";
+  }
+
+  var MX_TYPES = {1:["16th",0], 2:["eighth",0], 3:["eighth",1], 4:["quarter",0], 6:["quarter",1], 8:["half",0], 12:["half",1], 16:["whole",0]};
+  function mxNoteXml(len, rest, tieStart, tieStop, measureRest){
+    var t = MX_TYPES[len] || ["quarter", 0], xml = "<note>";
+    xml += rest ? (measureRest ? '<rest measure="yes"/>' : "<rest/>") : "<pitch><step>B</step><octave>4</octave></pitch>";
+    xml += "<duration>" + len + "</duration>";
+    if (tieStop) xml += '<tie type="stop"/>';
+    if (tieStart) xml += '<tie type="start"/>';
+    xml += "<voice>1</voice>";
+    if (!measureRest) xml += "<type>" + t[0] + "</type>" + (t[1] ? "<dot/>" : "");
+    if (!rest) xml += "<stem>none</stem><notehead>slash</notehead>";
+    if (!rest && (tieStart || tieStop)) xml += "<notations>" + (tieStop ? '<tied type="stop"/>' : "") + (tieStart ? '<tied type="start"/>' : "") + "</notations>";
+    return xml + "</note>";
+  }
+
+  function songToMusicXml(src){
+    var d = normalizeDoc(clone(src)), bars = d.bars;
+    var G = computeGeom(d, 0), rowStart = {};
+    G.rows.forEach(function(r){ if (r.count) rowStart[r.start] = true; });
+    var groups = endingGroups(bars), endAt = {}, startAt = {};
+    groups.forEach(function(g){ startAt[g.from] = g; endAt[g.to] = g; });
+    var filler = /^[\/.\-–—]+$/;
+    var out = [], prev = null, ks = mxKeyFifths(d.key), repeating = false, tokens = [];
+    bars.forEach(function(b0, i){
+      // A one-bar repeat keeps the bar it repeats (its notes, not its chords: they go on) and
+      // is marked as a measure repeat, which notation programs draw as the same sign.
+      var b = b0, isRep = isRepeatMeasure(b0.chord) && !!prev, styleChange = "";
+      if (isRep){ b = clone(prev); ["label","note","repeatStart","repeatEnd","repeatTimes","ending","startMark","endMark","timeSig"].forEach(function(k){ b[k] = b0[k]; }); }
+      else prev = b0;
+      if (isRep && !repeating) styleChange = '<measure-style><measure-repeat type="start">1</measure-repeat></measure-style>';
+      if (!isRep && repeating) styleChange = '<measure-style><measure-repeat type="stop"/></measure-style>';
+      repeating = isRep;
+      var meter = meterAt(bars, d.timeSig, i), ts = meter.split("/"), num = parseInt(ts[0], 10) || 4, den = parseInt(ts[1], 10) || 4;
+      var dur = den === 8 ? num * 2 : num * 4;
+      var x = '<measure number="' + (i + 1) + '">';
+      if (i > 0 && rowStart[i]) x += '<print new-system="yes"/>';
+      var g = startAt[i];
+      if (b.repeatStart || g){
+        x += '<barline location="left">' + (b.repeatStart ? '<bar-style>heavy-light</bar-style>' : "") +
+          (g ? '<ending number="' + g.label.replace(/\.$/, "").split(".").join(", ") + '" type="start">' + mxEsc(g.label) + "</ending>" : "") +
+          (b.repeatStart ? '<repeat direction="forward"/>' : "") + "</barline>";
+      }
+      if (i === 0){
+        x += "<attributes><divisions>4</divisions>" + (ks ? "<key><fifths>" + ks.fifths + "</fifths><mode>" + ks.mode + "</mode></key>" : "<key><fifths>0</fifths></key>") +
+          "<time><beats>" + num + "</beats><beat-type>" + den + "</beat-type></time><clef><sign>G</sign><line>2</line></clef>" + styleChange + "</attributes>";
+        if (d.tempo && parseFloat(d.tempo)) x += '<direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>' + mxEsc(d.tempo) + '</per-minute></metronome></direction-type><sound tempo="' + mxEsc(d.tempo) + '"/></direction>';
+      } else if (showsMeter(d, i) || styleChange){
+        x += "<attributes>" + (showsMeter(d, i) ? "<time><beats>" + num + "</beats><beat-type>" + den + "</beat-type></time>" : "") + styleChange + "</attributes>";
+      }
+      if (isRep) tokens = [];
+      if (b.startMark === "segno") x += '<direction placement="above"><direction-type><segno/></direction-type><sound segno="segno"/></direction>';
+      if (b.startMark === "coda") x += '<direction placement="above"><direction-type><coda/></direction-type><sound coda="coda"/></direction>';
+      if (b.label) x += '<direction placement="above"><direction-type><rehearsal>' + mxEsc(b.label) + "</rehearsal></direction-type></direction>";
+      if (b.note) x += '<direction placement="above"><direction-type><words>' + mxEsc(b.note) + "</words></direction-type></direction>";
+
+      if (!isRep) tokens = String(b.chord || "").trim().split(/\s+/).filter(Boolean);
+      var words = [];
+      var harm = function(tok){ var h = mxHarmonyXml(tok); if (!h) words.push(tok); return h; };
+      if (isRestMeasure(b.chord)){
+        if (!isRep) x += mxHarmonyXml("N.C.");
+        x += mxNoteXml(dur, true, false, false, true);
+      }
+      else {
+        var cells = barCellsAt(d, i), rh = rhythmOf(b, cells);
+        if (rh){
+          // Chords go onto the hits in order; "/" keeps the chord going on a hit.
+          var pieces = rhythmPieces(rh, b.tieIn), t = 0, tiedIn = false;
+          // A bar with no hit of its own (a note tied over from the bar before) shows its chord at the start.
+          if (!/[xX]/.test(rh)) tokens.forEach(function(tok){ if (!filler.test(tok)) x += harm(tok); });
+          pieces.forEach(function(pc, k){
+            var hit = pc.note && !pc.tieIn && /[xX]/.test(rh.charAt(pc.start));
+            if (!pc.note && t < tokens.length && filler.test(tokens[t]) && (k === 0 || pieces[k - 1].note)) t++;
+            if (hit && t < tokens.length){
+              var lastHit = !pieces.slice(k + 1).some(function(q){ return q.note && !q.tieIn && /[xX]/.test(rh.charAt(q.start)); });
+              var take = lastHit ? tokens.slice(t) : [tokens[t]];
+              t = lastHit ? tokens.length : t + 1;
+              take.forEach(function(tok){ if (!filler.test(tok)) x += harm(tok); });
+            }
+            if (pc.wholeRest) x += mxNoteXml(dur, true, false, false, true);
+            else x += mxNoteXml(pc.len, !pc.note, pc.tieToNext, tiedIn || pc.tieIn);
+            tiedIn = pc.note && pc.tieToNext;
+          });
+        } else {
+          var unit = den === 8 ? 2 : 4, slots = Math.max(1, Math.round(dur / unit)), at = {};
+          var perBeat = tokens.some(function(tok){ return filler.test(tok); });
+          tokens.forEach(function(tok, j){
+            var s = perBeat ? Math.min(j, slots - 1) : Math.floor(j * slots / tokens.length);
+            if (!filler.test(tok)) (at[s] = at[s] || []).push(tok);
+          });
+          for (var s = 0; s < slots; s++){
+            (at[s] || []).forEach(function(tok){ x += harm(tok); });
+            x += mxNoteXml(unit, false, false, false);
+          }
+        }
+      }
+      if (words.length) x += '<direction placement="above"><direction-type><words>' + mxEsc(words.join(" ")) + "</words></direction-type></direction>";
+      if (b.endMark) x += '<direction placement="above"><direction-type><words>' + mxEsc(b.endMark) + "</words></direction-type><sound" + (MX_END_SOUND[b.endMark] || "") + "/></direction>";
+      var ge = endAt[i], times = b.repeatEnd && !voltaTimes(bars, i) && b.repeatTimes > 2 ? ' times="' + b.repeatTimes + '"' : "";
+      if (b.repeatEnd || ge || i === bars.length - 1){
+        x += '<barline location="right"><bar-style>light-heavy</bar-style>' +
+          (ge ? '<ending number="' + ge.label.replace(/\.$/, "").split(".").join(", ") + '" type="' + (b.repeatEnd || ge.closed ? "stop" : "discontinue") + '"/>' : "") +
+          (b.repeatEnd ? '<repeat direction="backward"' + times + "/>" : "") + "</barline>";
+      }
+      out.push(x + "</measure>");
+    });
+    return '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n' +
+      '<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">\n' +
+      '<score-partwise version="4.0">' +
+      "<work><work-title>" + mxEsc(d.title || "İsimsiz şarkı") + "</work-title></work>" +
+      "<identification>" + (d.artist ? '<creator type="composer">' + mxEsc(d.artist) + "</creator>" : "") +
+      "<encoding><software>Repertuar Defteri</software><encoding-date>" + new Date().toISOString().slice(0, 10) + "</encoding-date></encoding></identification>" +
+      '<part-list><score-part id="P1"><part-name>Akorlar</part-name></score-part></part-list>' +
+      '<part id="P1">\n' + out.join("\n") + "\n</part></score-partwise>\n";
+  }
+
+  function exportMusicXml(){
+    if (!currentDoc || view !== "songs") return;
+    var active = document.activeElement;
+    if (active && active.closest && active.closest("#sheetHost")) active.blur();
+    var name = fileBaseName() + ".musicxml";
+    reportSave(saveFile(name, songToMusicXml(currentDoc), "application/vnd.recordare.musicxml+xml"), "MusicXML hazır: " + name);
+  }
+
   // ---- sharing songs and setlists as files ----
   // A song, a setlist with its songs, or everything can be written to a .json file and added
   // on another device or by another person, like sending a document.
@@ -3286,13 +3713,14 @@
     return db.doc("songs/" + id).get().then(function(s){ return s.exists ? s.data() : null; });
   }
 
-  function saveFile(filename, text){
-    var blob = new Blob([text], {type: "application/json"});
+  function saveFile(filename, text, type){
+    type = type || "application/json";
+    var blob = new Blob([text], {type: type});
     return getDownloads().then(function(downloads){
       if (downloads) return downloads.save({filename: filename, data: blob});
       // On a phone the file goes to the share sheet (WhatsApp, e-mail…); elsewhere it downloads.
       try {
-        var file = new File([blob], filename, {type: "application/json"});
+        var file = new File([blob], filename, {type: type});
         if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) && navigator.canShare && navigator.canShare({files: [file]})){
           return navigator.share({files: [file], title: filename});
         }
@@ -3507,6 +3935,7 @@
   document.getElementById("deleteItemBtn").addEventListener("click", deleteCurrentItem);
   document.getElementById("deleteArtistBtn").addEventListener("click", deleteCurrentArtist);
   document.getElementById("exportBtn").addEventListener("click", exportCurrent);
+  document.getElementById("musicXmlBtn").addEventListener("click", exportMusicXml);
   document.getElementById("backupBtn").addEventListener("click", backupAll);
   document.getElementById("importBtn").addEventListener("click", function(){
     if (dirty && !confirm(leaveMessage())) return;
@@ -3518,8 +3947,19 @@
     if (!file) return;
     if (dirty){ closeCurrent(); }
     var reader = new FileReader();
-    reader.onload = function(){ importFile(String(reader.result || "")); };
     reader.onerror = function(){ alertStatus("Dosya okunamadı."); };
+    if (/\.mxl$/i.test(file.name)){
+      reader.onload = function(){
+        mxlToText(reader.result).then(function(text){ importMusicXml(text, file.name); }, function(err){ alertStatus(err.message || "Dosya okunamadı."); });
+      };
+      reader.readAsArrayBuffer(file);
+      return;
+    }
+    reader.onload = function(){
+      var text = String(reader.result || "");
+      // MusicXML is XML; everything else this notebook writes is JSON.
+      if (/^\s*</.test(text)) importMusicXml(text, file.name); else importFile(text);
+    };
     reader.readAsText(file);
   });
   document.getElementById("saveBtn").addEventListener("click", saveNow);
